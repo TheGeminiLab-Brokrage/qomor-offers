@@ -9,6 +9,16 @@
 <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
 <link rel="icon" href="assets/icons/icon-192.png">
 <link rel="stylesheet" href="css/styles.css">
+<!-- The masterplan render is the first thing anyone sees, but its src is set by
+     renderHero() — which only runs once the inventory has parsed, so the image
+     did not START downloading until then and the page sat empty for the whole
+     fetch. Preloading it here begins the download with the HTML, in parallel
+     with everything else. Kept as a preload rather than a src on the <img> so
+     MASSING.image stays the single source of truth for which render is used. -->
+<link rel="preload" as="image" href="assets/render.jpg" fetchpriority="high">
+<!-- The inventory is the other thing on the critical path; warm the connection
+     so the TLS handshake is not paid for after app.js finally runs. -->
+<link rel="preconnect" href="https://docs.google.com" crossorigin>
 </head>
 <body>
 
@@ -154,10 +164,16 @@
   <p id="assumptions"></p>
 </footer>
 
-<!-- jsPDF is vendored, not loaded from a CDN: this app is used in meetings on
-     whatever connection the room has, and an offer that fails to generate
-     because a CDN is slow is worse than a slightly larger download. -->
-<script src="vendor/jspdf.umd.min.js"></script>
+<!-- jsPDF is vendored rather than loaded from a CDN: this app is used in
+     meetings on whatever connection the room has, and an offer that fails to
+     generate because a CDN is slow is worse than a slightly larger download.
+
+     It is NOT loaded here. At 410 KB it was the single biggest thing on the
+     critical path, and because scripts execute in order it had to finish
+     downloading and parsing before app.js could even start fetching the
+     inventory — on a phone hotspot that alone was most of a two-minute wait.
+     js/pdf.js pulls it in on demand, and app.js prefetches it once the page is
+     idle, so the first offer is still instant. -->
 <script src="js/config.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/sheet.js"></script>

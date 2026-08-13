@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v1';
+const CACHE = 'qomor-offers-v2';
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets — the renders and the floor drawings,
@@ -28,7 +28,9 @@ const SHELL = [
   'js/engine.js',
   'js/pdf.js',
   'js/app.js',
-  'vendor/jspdf.umd.min.js',
+  /* jsPDF is NOT precached. At 410 KB it competed for bandwidth with the very
+   * first paint on a phone, which is the moment that matters most; it is
+   * fetched and cached on first use instead, and app.js warms it when idle. */
   'site.webmanifest',
   'assets/logo.png',
   'assets/icons/icon-192.png',

@@ -608,6 +608,16 @@ $('btnOffer').onclick = async () => {
 
 /* ------------------------------------------------------------------ boot -- */
 
+/* Warm the PDF library once the page has settled. It is deliberately not on the
+   critical path — see the comment in index.html — but by the time anyone has
+   picked a building, a floor and a unit it will long since be cached, so the
+   first offer is as instant as it was when it blocked startup. */
+(() => {
+  const warm = () => loadJsPDF().catch(() => {});   // silent: it retries on demand
+  if ('requestIdleCallback' in window) requestIdleCallback(warm, { timeout: 8000 });
+  else setTimeout(warm, 4000);
+})();
+
 $('btnRefresh').onclick = () => refresh();
 ['fltType', 'fltSort'].forEach((id) => { $(id).onchange = renderUnits; });
 
