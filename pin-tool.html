@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qomor — Unit Pin Tool</title>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+/* Same idea as the hotspot tracer: click to place, loupe to be exact, autosave
+   so a reload can never destroy the work. */
+#bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 22px;
+  border-bottom:1px solid var(--edge);background:rgba(0,0,0,.25)}
+select{background:#111;color:#fff;border:1px solid var(--edge);border-radius:9px;
+  padding:8px 11px;font:inherit}
+#work{display:grid;grid-template-columns:1fr 300px;gap:0;height:calc(100vh - 122px)}
+@media (max-width:980px){#work{grid-template-columns:1fr}}
+#stage{overflow:auto;padding:16px;position:relative}
+#frame{position:relative;width:100%;cursor:crosshair;line-height:0;background:#fff;
+  border-radius:10px;overflow:hidden;border:1px solid var(--edge)}
+#frame img{width:100%;display:block;user-select:none;-webkit-user-drag:none}
+#draw{position:absolute;inset:0;width:100%;height:100%}
+#draw circle{stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke}
+#draw circle.done{fill:#1FA971}
+#draw circle.cur{fill:#FF9E3D;stroke:#1A0E02;stroke-width:2.5}
+#draw text{font:600 .012px sans-serif;fill:#fff;paint-order:stroke;stroke:#000;stroke-width:.004px;text-anchor:middle}
+aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-height:0;background:rgba(0,0,0,.25)}
+#queue{overflow:auto;flex:1;padding:10px 14px;min-height:0}
+#queue div{padding:5px 8px;border-radius:7px;font-size:12.5px;display:flex;justify-content:space-between;gap:8px}
+#queue div.on{background:rgba(255,158,61,.2);color:#FFC27A;font-weight:600}
+#queue div.done{color:var(--faint)}
+#out{width:100%;height:150px;background:rgba(0,0,0,.55);color:#8FE0A8;
+  border:1px solid var(--edge);border-radius:10px;padding:10px;
+  font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre;resize:vertical}
+#loupe{position:fixed;width:190px;height:190px;border-radius:50%;pointer-events:none;
+  border:2px solid var(--amber);box-shadow:0 10px 40px rgba(0,0,0,.75);
+  background-repeat:no-repeat;display:none;z-index:50}
+#loupe.on{display:block}
+#loupe::after{content:"";position:absolute;inset:0;border-radius:50%;
+  background:linear-gradient(var(--amber),var(--amber)) center/100% 1px no-repeat,
+             linear-gradient(var(--amber),var(--amber)) center/1px 100% no-repeat;opacity:.85}
+.pad{padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+</style>
+</head>
+<body>
+
+<header id="top">
+  <div class="brand">
+    <div class="mark">Q</div>
+    <div><b>Unit pin tool</b><span>place one dot per unit</span></div>
+  </div>
+  <span id="status" style="font-size:12.5px;color:var(--dim)"></span>
+</header>
+
+<div id="bar">
+  <select id="selBuilding"></select>
+  <select id="selFloor"></select>
+  <button class="ghost small" id="btnUndo" type="button">Undo last</button>
+  <button class="ghost small" id="btnSkip" type="button">Skip unit</button>
+  <button class="ghost small" id="btnClear" type="button">Clear this floor</button>
+  <span class="spacer" style="flex:1"></span>
+  <span id="progress" style="font-size:12.5px;color:var(--dim)"></span>
+</div>
+
+<div id="work">
+  <div id="stage">
+    <div id="frame">
+      <img id="plan" alt="floor plan">
+      <svg id="draw" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+  <aside>
+    <div id="queue"></div>
+    <div class="pad">
+      <textarea id="out" spellcheck="false"></textarea>
+      <button class="ghost" id="btnCopy" type="button">Copy for plan.js</button>
+      <button class="ghost small" id="btnLoad" type="button">Load from box</button>
+      <p style="font-size:11px;color:var(--faint);margin:0;line-height:1.5">
+        Click the middle of each unit on the drawing. The highlighted code in the
+        list is the one being placed; it advances automatically. Work is saved in
+        this browser as you go. Paste the output into <b>PLANS[floor].pins</b> in
+        <code>js/plan.js</code>.
+      </p>
+    </div>
+  </aside>
+</div>
+
+<div id="loupe"></div>
+
+<script src="js/config.js"></script>
+<script src="js/plan.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/engine.js"></script>
+<script>
+"use strict";
+
+/* Pins are fractions of the image WIDTH and HEIGHT (viewBox 0 0 1 1), which is
+   exactly what plan.js expects, so the output pastes in with no conversion. */
+var KEY = 'qomor.pins.v1';
+var store = {
+  load: function () { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } },
+  save: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+};
+
+var pins = store.load();          // { floorCode: { CODE: [x,y] } }
+var units = [], cur = 0, floorCode = null, buildingId = null;
+
+var frame = document.getElementById('frame');
+var draw = document.getElementById('draw');
+var img = document.getElementById('plan');
+var loupe = document.getElementById('loupe');
+var ZOOM = 4, LOUPE = 190;
+
+function q() { return units.filter(function (u) { return true; }); }
+function pinsFor() { return (pins[floorCode] = pins[floorCode] || {}); }
+
+function render() {
+  var p = pinsFor(), s = '';
+  units.forEach(function (u, i) {
+    var xy = p[u.code];
+    if (!xy) return;
+    s += '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (i === cur ? 0.012 : 0.008) +
+         '" class="' + (i === cur ? 'cur' : 'done') + '"/>';
+  });
+  draw.innerHTML = s;
+
+  var qbox = document.getElementById('queue');
+  qbox.innerHTML = '';
+  units.forEach(function (u, i) {
+    var d = document.createElement('div');
+    d.className = (i === cur ? 'on' : '') + (p[u.code] ? ' done' : '');
+    var a = document.createElement('span'); a.textContent = u.code;
+    var b = document.createElement('span'); b.textContent = (u.area != null ? u.area + ' m²' : '');
+    d.appendChild(a); d.appendChild(b);
+    d.onclick = function () { cur = i; render(); };
+    qbox.appendChild(d);
+    if (i === cur) setTimeout(function () { d.scrollIntoView({ block: 'nearest' }); }, 0);
+  });
+
+  var done = Object.keys(p).length;
+  document.getElementById('progress').textContent = done + ' of ' + units.length + ' placed';
+  document.getElementById('out').value = emit();
+  store.save(pins);
+}
+
+function emit() {
+  var p = pinsFor();
+  var lines = units.filter(function (u) { return p[u.code]; }).map(function (u) {
+    return "    '" + u.code + "': [" + p[u.code][0] + ', ' + p[u.code][1] + '],';
+  });
+  return 'PLANS.' + floorCode + '.pins = {\n' + lines.join('\n') + '\n};';
+}
+
+frame.addEventListener('click', function (e) {
+  if (!units.length) return;
+  var r = frame.getBoundingClientRect();
+  var x = +((e.clientX - r.left) / r.width).toFixed(4);
+  var y = +((e.clientY - r.top) / r.height).toFixed(4);
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  pinsFor()[units[cur].code] = [x, y];
+  if (cur < units.length - 1) cur++;
+  render();
+});
+
+frame.addEventListener('pointermove', function (e) {
+  var r = frame.getBoundingClientRect();
+  loupe.classList.add('on');
+  loupe.style.left = (e.clientX - LOUPE / 2) + 'px';
+  loupe.style.top = (e.clientY - LOUPE - 26) + 'px';
+  loupe.style.backgroundImage = 'url(' + img.src + ')';
+  loupe.style.backgroundSize = (r.width * ZOOM) + 'px auto';
+  loupe.style.backgroundPosition =
+    (-(e.clientX - r.left) * ZOOM + LOUPE / 2) + 'px ' + (-(e.clientY - r.top) * ZOOM + LOUPE / 2) + 'px';
+});
+frame.addEventListener('pointerleave', function () { loupe.classList.remove('on'); });
+
+document.getElementById('btnUndo').onclick = function () {
+  if (cur > 0 && !pinsFor()[units[cur].code]) cur--;
+  delete pinsFor()[units[cur].code];
+  render();
+};
+document.getElementById('btnSkip').onclick = function () {
+  if (cur < units.length - 1) { cur++; render(); }
+};
+document.getElementById('btnClear').onclick = function () {
+  if (!confirm('Clear every pin on ' + floorCode + '?')) return;
+  pins[floorCode] = {}; cur = 0; render();
+};
+document.getElementById('btnCopy').onclick = function () {
+  var t = document.getElementById('out');
+  t.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  this.textContent = 'Copied'; var b = this;
+  setTimeout(function () { b.textContent = 'Copy for plan.js'; }, 1400);
+};
+document.getElementById('btnLoad').onclick = function () {
+  var text = document.getElementById('out').value;
+  var found = {}, re = /'([A-Z]{1,3}[A-Z]{0,2}-?\d+)'\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*\]/g, m;
+  while ((m = re.exec(text))) found[m[1]] = [parseFloat(m[2]), parseFloat(m[3])];
+  if (!Object.keys(found).length) { alert('Could not read any pins from the box.'); return; }
+  pins[floorCode] = found; render();
+};
+document.addEventListener('keydown', function (e) {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Backspace') { e.preventDefault(); document.getElementById('btnUndo').click(); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); document.getElementById('btnSkip').click(); }
+  if (e.key === 'ArrowLeft' && cur > 0) { e.preventDefault(); cur--; render(); }
+});
+
+function pick() {
+  buildingId = document.getElementById('selBuilding').value;
+  floorCode = document.getElementById('selFloor').value;
+  var plan = PLANS[floorCode];
+  img.src = plan ? plan.image : '';
+  units = ALL.filter(function (u) { return u.building === buildingId && u.floorCode === floorCode; })
+              .sort(function (a, b) { return a.unit - b.unit; });
+  cur = 0;
+  /* Start on the first unit that still has no pin, so reopening the tool
+     resumes where the work stopped instead of at the top. */
+  var p = pinsFor();
+  for (var i = 0; i < units.length; i++) { if (!p[units[i].code]) { cur = i; break; } }
+  render();
+}
+
+var ALL = [];
+loadInventory().then(function (res) {
+  ALL = res.units;
+  document.getElementById('status').textContent =
+    res.units.length + ' units read from the sheet' + (res.live ? ' (live)' : ' (offline copy)');
+  var sb = document.getElementById('selBuilding');
+  CONFIG.buildings.forEach(function (b) {
+    var o = document.createElement('option'); o.value = b.id; o.textContent = b.name; sb.appendChild(o);
+  });
+  var sf = document.getElementById('selFloor');
+  CONFIG.floors.filter(function (f) { return PLANS[f.code]; }).forEach(function (f) {
+    var o = document.createElement('option'); o.value = f.code; o.textContent = f.name; sf.appendChild(o);
+  });
+  sb.onchange = pick; sf.onchange = pick;
+  pick();
+});
+</script>
+</body>
+</html>

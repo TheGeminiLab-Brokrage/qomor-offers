@@ -1,0 +1,349 @@
+/* Qomor Business Park — offer generator.
+   Dark amber, matching the building picker so the two read as one product. */
+
+:root{
+  --ink:#fff;
+  --dim:rgba(255,255,255,.62);
+  --faint:rgba(255,255,255,.38);
+  --bg:#08080A;
+  --amber:#FF9E3D;
+  --amber-soft:#FFC27A;
+  --amber-deep:#C96A15;
+  --glass:rgba(255,255,255,.06);
+  --glass-hi:rgba(255,255,255,.10);
+  --edge:rgba(255,255,255,.13);
+  --edge-hi:rgba(255,255,255,.24);
+  --good:#3DD68C;
+  --warn:#FFC65A;
+  --bad:#FF6B6B;
+}
+*{box-sizing:border-box}
+/* The dark colour is set on <html> as well as <body>. The body's gradient
+   propagates to the canvas, but overscroll and the area beyond a short
+   document can still paint the default white — which flashes on a dark page. */
+html{background:#050506;color-scheme:dark}
+html,body{margin:0;min-height:100%}
+body{
+  background:radial-gradient(120% 70% at 50% 0%,#17171C 0%,#050506 70%) fixed;
+  color:var(--ink);
+  font:400 15px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+  padding-bottom:60px;
+}
+
+/* ---------- header ---------- */
+#top{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:18px 22px;border-bottom:1px solid var(--edge);
+}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+/* The wordmark is white-and-gold with a transparent background, so it reads
+   only on the dark page — never invert it or place it on white. Height is
+   pinned so the intrinsic 606x300 cannot push the header around; width:auto
+   keeps the aspect ratio. */
+.brand .logo{height:34px;width:auto;display:block;flex:none}
+.brand .names{padding-left:14px;border-left:1px solid var(--edge);min-width:0}
+.brand .names b{
+  display:block;font-size:12.5px;letter-spacing:.15em;text-transform:uppercase;
+}
+.brand .names span{
+  display:block;font-size:10px;color:var(--faint);
+  letter-spacing:.11em;text-transform:uppercase;
+}
+@media (max-width:560px){
+  .brand{gap:10px}
+  .brand .logo{height:27px}
+  .brand .names{padding-left:10px}
+  .brand .names b{font-size:11px}
+  .brand .names span{font-size:9px}
+}
+
+button{font:inherit;color:inherit;cursor:pointer}
+.ghost{
+  background:var(--glass);border:1px solid var(--edge);border-radius:10px;
+  padding:9px 15px;font-size:13px;font-weight:600;
+}
+.ghost:hover{background:var(--glass-hi);border-color:var(--edge-hi)}
+.ghost:disabled{opacity:.5;cursor:default}
+
+/* ---------- sync bar ---------- */
+.sync{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 22px;font-size:12.5px;color:var(--dim);
+  border-bottom:1px solid var(--edge);background:rgba(0,0,0,.25);
+}
+.sync .spacer{flex:1}
+.sync .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;
+}
+.sync.live .dot{background:var(--good);box-shadow:0 0 10px rgba(61,214,140,.8);
+  animation:pulse 2.4s ease-in-out infinite}
+.sync.stale .dot{background:var(--bad);box-shadow:0 0 10px rgba(255,107,107,.8)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.sync b{color:var(--ink);font-weight:600}
+@media (prefers-reduced-motion:reduce){.sync.live .dot{animation:none}}
+
+.warnings{
+  margin:14px 22px 0;padding:12px 15px;border-radius:12px;
+  background:rgba(255,198,90,.10);border:1px solid rgba(255,198,90,.34);
+  font-size:12.5px;color:#FFE0A8;
+}
+.warnings ul{margin:6px 0 0;padding-left:18px}
+.warnings li{margin:3px 0}
+
+/* ---------- steps ---------- */
+main{padding:22px;max-width:1080px;margin:0 auto}
+.step{margin-bottom:30px}
+.step h2{
+  display:flex;align-items:center;gap:10px;margin:0 0 13px;
+  font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+}
+.step h2 i{
+  width:21px;height:21px;border-radius:6px;display:grid;place-items:center;
+  background:var(--glass);border:1px solid var(--edge);
+  font-style:normal;font-size:11px;color:var(--ink);
+}
+.step h2 small{font-size:11px;letter-spacing:0;text-transform:none;color:var(--faint);font-weight:400}
+
+/* Compact: these are a means to the floor plan, not the main event. */
+.grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+#floors{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+.card{
+  background:var(--glass);border:1px solid var(--edge);border-radius:12px;
+  padding:9px 11px;text-align:left;display:flex;flex-direction:column;gap:8px;
+  transition:background .16s,border-color .16s,transform .16s;
+}
+.card:hover:not(:disabled){background:var(--glass-hi);border-color:var(--edge-hi);transform:translateY(-2px)}
+.card.on{border-color:rgba(255,158,61,.85);background:rgba(255,158,61,.13)}
+.card:disabled{opacity:.42;cursor:not-allowed}
+.card .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card .id{
+  width:22px;height:22px;border-radius:8px;display:grid;place-items:center;
+  background:rgba(255,255,255,.1);font-weight:600;font-size:11px;flex:none;
+}
+.card.on .id{background:linear-gradient(150deg,var(--amber-soft),var(--amber-deep));color:#1A0E02}
+.card .pill{
+  font-size:8px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  padding:3px 8px;border-radius:999px;white-space:nowrap;
+  background:rgba(255,158,61,.2);color:var(--amber-soft);
+}
+.card .pill.none{background:rgba(255,255,255,.09);color:var(--dim)}
+.card .val{font-size:15px;font-weight:600;letter-spacing:-.015em;line-height:1}
+.card .lab{font-size:9px;color:var(--faint);letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+
+/* ---------- units ---------- */
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--faint);margin-bottom:11px}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:block}
+.sw.available{background:var(--good)}
+.sw.reserved{background:var(--warn)}
+.sw.sold{background:var(--bad)}
+
+.units{display:grid;gap:7px;grid-template-columns:repeat(auto-fill,minmax(118px,1fr))}
+.unit{
+  border-radius:11px;padding:9px 10px;text-align:left;
+  background:var(--glass);border:1px solid var(--edge);
+  display:flex;flex-direction:column;gap:3px;
+}
+.unit .code{font-size:12.5px;font-weight:600;letter-spacing:.02em}
+.unit .meta{font-size:10px;color:var(--faint)}
+.unit .price{font-size:11px;color:var(--dim)}
+.unit.available{border-color:rgba(61,214,140,.5)}
+.unit.available:hover{background:rgba(61,214,140,.14)}
+.unit.reserved{opacity:.6;border-color:rgba(255,198,90,.42);cursor:not-allowed}
+.unit.sold{opacity:.42;border-color:rgba(255,107,107,.38);cursor:not-allowed}
+.unit.on{border-color:var(--amber);background:rgba(255,158,61,.16)}
+
+/* ---------- plan + schedule ---------- */
+.unitcard{
+  background:var(--glass);border:1px solid var(--edge);border-radius:15px;
+  padding:15px 17px;margin-bottom:14px;display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+}
+.unitcard div span{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.unitcard div b{display:block;font-size:16px;font-weight:600;margin-top:3px}
+
+/* Payment plan is a dropdown. The native control is kept — it is the one
+   widget every buyer and every agent already knows how to drive, and on a phone
+   it opens the OS picker instead of a bespoke menu that has to be re-learned. */
+.plans{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.planLabel{
+  font-size:10.5px;color:var(--faint);letter-spacing:.11em;text-transform:uppercase;
+}
+.planSelect{
+  flex:1 1 300px;max-width:460px;
+  appearance:none;-webkit-appearance:none;
+  background:var(--glass);border:1px solid var(--edge);border-radius:11px;
+  color:var(--ink);font:inherit;font-size:14px;font-weight:600;
+  padding:12px 40px 12px 15px;cursor:pointer;
+  /* Chevron drawn in CSS so the control needs no image and no extra markup. */
+  background-image:
+    linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+    linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+  background-position:calc(100% - 21px) 51%,calc(100% - 15px) 51%;
+  background-size:6px 6px,6px 6px;
+  background-repeat:no-repeat;
+}
+.planSelect:hover{background-color:var(--glass-hi);border-color:var(--edge-hi)}
+.planSelect:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+/* The popup list is drawn by the OS, which does not inherit the page's dark
+   theme — set both so the options are not black-on-black on Windows. */
+.planSelect option{background:#15151A;color:var(--ink)}
+
+/* ---------- offer ---------- */
+.offerbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:20px}
+.cta{
+  background:linear-gradient(150deg,var(--amber-soft),var(--amber-deep));
+  color:#1A0E02;border:0;border-radius:11px;
+  padding:13px 22px;font-size:14px;font-weight:700;
+  box-shadow:0 0 24px rgba(255,158,61,.30);
+}
+.cta:hover{filter:brightness(1.07)}
+.cta:disabled{opacity:.55;cursor:default;box-shadow:none}
+.offerbar span{font-size:12.5px;color:var(--dim)}
+.offerbar span.bad{color:var(--bad)}
+
+.summary{
+  display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  margin-bottom:16px;
+}
+.summary div{background:var(--glass);border:1px solid var(--edge);border-radius:12px;padding:12px 14px}
+.summary span{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.summary b{display:block;font-size:17px;font-weight:600;margin-top:4px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--edge)}
+th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+td.num,th.num{text-align:right}
+tr.yr td{background:rgba(255,255,255,.05);font-weight:600;font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--amber-soft)}
+tr.milestone td{color:var(--amber-soft)}
+tr.total td{font-weight:700;border-top:2px solid var(--edge-hi);border-bottom:0}
+
+footer{padding:0 22px;max-width:1080px;margin:0 auto}
+footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px solid var(--edge);padding-top:14px}
+.empty{color:var(--faint);font-size:13px;padding:14px 0}
+
+/* ---------- masterplan render (step 1) ---------- */
+#hero{
+  position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--edge);
+  background:#000;margin-bottom:12px;aspect-ratio:2000/1260;
+}
+#hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block}
+#heroSvg{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+#heroSvg polygon{
+  fill:rgba(150,150,156,.10);stroke:rgba(200,200,208,.34);stroke-width:1.6;
+  cursor:pointer;transition:fill .18s,stroke .18s;vector-effect:non-scaling-stroke;
+}
+/* All four buildings look and behave identically. Availability is reported by
+   the cards and the tooltip, never by the colour of the massing — colouring by
+   stock made two buildings glow amber and two grey, which read as a rendering
+   fault rather than as information. */
+#heroSvg polygon.hot:not(.sel){
+  fill:rgba(190,202,218,.30);stroke:#E4EDF7;filter:url(#glowCool);
+}
+/* Selected: steady amber. No flicker — an irregular animation reads as a
+   glitch, not as emphasis. */
+#heroSvg polygon.sel,
+#heroSvg polygon.sel.hot{
+  fill:rgba(255,158,61,.46);stroke:#FFE0BC;stroke-width:2.6;filter:url(#glowF);
+}
+
+#heroTip,#planTip{
+  position:absolute;z-index:4;pointer-events:none;opacity:0;
+  transform:translate(-50%,-136%);transition:opacity .15s;
+  background:rgba(9,9,11,.92);border:1px solid var(--edge-hi);
+  padding:6px 11px;border-radius:10px;white-space:nowrap;
+  box-shadow:0 8px 26px rgba(0,0,0,.66);
+}
+#heroTip.on,#planTip.on{opacity:1}
+#heroTip b,#planTip b{display:block;font-size:12px;font-weight:600}
+#heroTip i,#planTip i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--amber-soft)}
+#heroTip.off i,#planTip.off i{color:var(--faint)}
+
+/* ---------- floor plan with pins (step 3) ---------- */
+#planWrap{
+  position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--edge);
+  background:#fff;margin-bottom:12px;
+}
+#planWrap[hidden]{display:none}
+#planImg{width:100%;display:block}
+#planSvg{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+#planSvg .pin{
+  cursor:pointer;stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke;
+  transition:r .15s;
+}
+#planSvg .pin.available{fill:#1FA971}
+#planSvg .pin.reserved{fill:#E0A21C;cursor:not-allowed}
+/* Sold is RED, never grey — grey reads as "not released". */
+#planSvg .pin.sold{fill:#D93B3B;cursor:not-allowed}
+#planSvg .pin.available:hover{r:.014}
+#planSvg .pin.on{fill:#FF9E3D;stroke:#1A0E02;stroke-width:2.5}
+
+.legend .spacer{flex:1}
+.ghost.small{padding:5px 11px;font-size:11.5px}
+
+/* ---------- step 3: drawing + unit panel ---------- */
+#unitLayout{display:grid;grid-template-columns:1fr 290px;gap:14px;align-items:start}
+@media (max-width:900px){#unitLayout{grid-template-columns:1fr}}
+
+#unitPanel{
+  background:var(--glass);border:1px solid var(--edge);border-radius:14px;
+  display:flex;flex-direction:column;max-height:640px;overflow:hidden;
+}
+.panelhead{padding:12px 13px;border-bottom:1px solid var(--edge);display:grid;gap:8px}
+.panelhead label{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:8px}
+.panelhead label span{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.panelhead select{
+  background:#121215;color:var(--ink);border:1px solid var(--edge);border-radius:8px;
+  padding:6px 8px;font:inherit;font-size:12px;width:100%;
+}
+.panelhead p{margin:2px 0 0;font-size:11px;color:var(--faint)}
+
+#units{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;min-height:0}
+#units .unit{
+  display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;
+  border-radius:9px;padding:7px 9px;text-align:left;
+  background:transparent;border:1px solid transparent;
+}
+#units .unit .code{font-size:12.5px;font-weight:600}
+#units .unit .meta{font-size:10px;color:var(--faint);grid-column:1}
+#units .unit .price{font-size:11.5px;color:var(--dim);grid-column:2;grid-row:1/3;text-align:right}
+#units .unit.available{border-color:rgba(61,214,140,.34)}
+#units .unit.available:hover{background:rgba(61,214,140,.13)}
+#units .unit.reserved{opacity:.62;cursor:not-allowed}
+#units .unit.sold{opacity:.44;cursor:not-allowed}
+#units .unit.on{border-color:var(--amber);background:rgba(255,158,61,.17)}
+
+/* ---------- compact building bar (replaces the building cards) ---------- */
+#buildingBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#buildingBar .chip{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+  background:rgba(255,255,255,.1);font-weight:700;font-size:13px;
+}
+#buildingBar .chip.on{background:linear-gradient(150deg,var(--amber-soft),var(--amber-deep));color:#1A0E02}
+#buildingSel{
+  background:#121215;color:var(--ink);border:1px solid var(--edge);border-radius:9px;
+  padding:7px 10px;font:inherit;font-size:13px;
+}
+#buildingMeta{font-size:11.5px;color:var(--faint)}
+
+/* ---------- collapsed filter ---------- */
+#fltBox summary{
+  cursor:pointer;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--amber-soft);list-style:none;padding:4px 0;
+}
+#fltBox summary::-webkit-details-marker{display:none}
+#fltBox summary::before{content:"▸ ";font-size:10px}
+#fltBox[open] summary::before{content:"▾ "}
+#fltBox[open]{display:grid;gap:8px;margin-top:4px}
+
+/* ---------- saving callout ---------- */
+.saving{
+  margin-bottom:16px;padding:13px 15px;border-radius:12px;
+  background:rgba(61,214,140,.10);border:1px solid rgba(61,214,140,.36);
+}
+.saving b{display:block;font-size:17px;font-weight:700;color:#7CE8B4}
+.saving span{display:block;font-size:11.5px;color:var(--dim);margin-top:4px;line-height:1.5}

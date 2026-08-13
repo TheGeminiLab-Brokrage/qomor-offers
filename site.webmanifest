@@ -1,0 +1,16 @@
+{
+  "name": "Qomor Business Plaza — Offer Generator",
+  "short_name": "Qomor Offers",
+  "description": "Live inventory and instant PDF payment offers for Qomor Business Plaza, Badr City.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08080A",
+  "theme_color": "#0B1B2B",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

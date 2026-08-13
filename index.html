@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qomor Business Plaza — Offer Generator</title>
+<meta name="theme-color" content="#0B1B2B">
+<link rel="manifest" href="site.webmanifest">
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="icon" href="assets/icons/icon-192.png">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- The wordmark is the client's own, lifted from the catalogue cover. It is a
+     light logo with a transparent background, so it only ever sits on the dark
+     page — never invert it or put it on white. -->
+<header id="top">
+  <div class="brand">
+    <!-- Image is the wordmark ONLY. The full lockup (assets/logo-full.png)
+         carries "BUSINESS PLAZA" beneath it at a tenth of the logo height,
+         which is an illegible smudge at header size — so the strapline is set
+         as live text instead and stays crisp. -->
+    <img class="logo" src="assets/logo.png" alt="Qomor" width="578" height="260">
+    <div class="names">
+      <b>Business Plaza</b>
+      <span>By El Shihry Developments</span>
+    </div>
+  </div>
+  <button class="ghost" id="btnRefresh" type="button">Refresh</button>
+</header>
+
+<!-- Live sync status. The dot colour is the whole story at a glance:
+     amber = live, red = stale/offline. -->
+<div class="sync" id="sync">
+  <span class="dot" id="syncDot"></span>
+  <span id="syncText">Loading inventory…</span>
+  <span class="spacer"></span>
+  <span id="syncCounts"></span>
+</div>
+
+<div id="warnings" class="warnings" hidden></div>
+
+<main>
+  <section class="step" id="stepBuilding">
+    <h2><i>1</i> Building <small>Tap a building on the view, or use the cards</small></h2>
+    <!-- The masterplan picker. Its only output is selectBuilding(id) — the same
+         call the cards make — so the render, a 3D view and a plain list stay
+         interchangeable and nothing downstream knows which was used. -->
+    <div id="hero">
+      <img id="heroImg" alt="Qomor Business Plaza">
+      <svg id="heroSvg" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <!-- Authored in viewBox units, where 1 = the whole image width. A CSS
+               drop-shadow in px resolves in this same space and would smear at
+               image scale. -->
+          <filter id="glowF" x="-45%" y="-45%" width="190%" height="190%">
+            <feDropShadow dx="0" dy="0" stdDeviation=".005" flood-color="#FFC27A" flood-opacity=".95"/>
+            <feDropShadow dx="0" dy="0" stdDeviation=".016" flood-color="#FF9E3D" flood-opacity=".75">
+              <!-- The halo breathes independently of the CSS flicker, so the two
+                   drift in and out of phase and the light never looks looped. -->
+              <animate attributeName="flood-opacity" values=".45;.9;.55;.85;.45"
+                       dur="3.7s" repeatCount="indefinite"/>
+            </feDropShadow>
+          </filter>
+          <!-- Hovering a building with nothing available still lights up — it
+               just lights up cool instead of amber, so "look at me" and "you
+               can buy me" stay different signals. -->
+          <filter id="glowCool" x="-45%" y="-45%" width="190%" height="190%">
+            <feDropShadow dx="0" dy="0" stdDeviation=".005" flood-color="#DCE6F2" flood-opacity=".9"/>
+            <feDropShadow dx="0" dy="0" stdDeviation=".016" flood-color="#9FB4CC" flood-opacity=".6"/>
+          </filter>
+        </defs>
+      </svg>
+      <div id="heroTip"><b></b><i></i></div>
+    </div>
+    <!-- No cards: the render is the picker. This is just the current choice,
+         and a way to switch without going back to the image. -->
+    <div id="buildingBar">
+      <span class="chip" id="buildingChip">—</span>
+      <select id="buildingSel" aria-label="Switch building"></select>
+      <span id="buildingMeta"></span>
+    </div>
+  </section>
+
+  <section class="step" id="stepFloor" hidden>
+    <h2><i>2</i> Floor</h2>
+    <div class="grid" id="floors"></div>
+  </section>
+
+  <section class="step" id="stepUnit" hidden>
+    <h2><i>3</i> Unit <small id="unitHint"></small></h2>
+    <!-- The drawing is the selector; the side panel is the way to find a unit
+         by number rather than by eye. Two routes to the same selectUnit(). -->
+    <div id="unitLayout">
+      <div>
+        <!-- Only available units are shown anywhere in this app, so the legend
+             has one entry. A unit that is not for sale has no business showing
+             its price to a customer sitting beside the agent. -->
+        <div class="legend">
+          <span><i class="sw available"></i>Available units only</span>
+        </div>
+        <!-- Sold pins are RED: a grey "sold" reads too close to a grey
+             "not released". -->
+        <div id="planWrap">
+          <img id="planImg" alt="">
+          <svg id="planSvg" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+          <div id="planTip"><b></b><i></i></div>
+        </div>
+        <p class="empty" id="planNote" hidden></p>
+      </div>
+
+      <aside id="unitPanel">
+        <div class="panelhead">
+          <p id="fltCount"></p>
+          <!-- Closed until asked for: most of the time the agent wants the list,
+               not the controls. -->
+          <details id="fltBox">
+            <summary>Filter &amp; sort</summary>
+            <label>
+              <span>Type</span>
+              <select id="fltType"><option value="">Any</option></select>
+            </label>
+            <label>
+              <span>Sort</span>
+              <select id="fltSort">
+                <option value="unit">Unit number</option>
+                <option value="price">Price, low to high</option>
+                <option value="price-desc">Price, high to low</option>
+                <option value="area">Area, small to large</option>
+                <option value="area-desc">Area, large to small</option>
+              </select>
+            </label>
+          </details>
+        </div>
+        <div id="units"></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="step" id="stepPlan" hidden>
+    <h2><i>4</i> Payment plan</h2>
+    <div class="unitcard" id="unitCard"></div>
+    <div class="plans" id="plans"></div>
+    <div id="schedule"></div>
+    <div class="offerbar">
+      <button class="cta" id="btnOffer" type="button">Send offer on WhatsApp</button>
+      <span id="offerNote"></span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p id="assumptions"></p>
+</footer>
+
+<!-- jsPDF is vendored, not loaded from a CDN: this app is used in meetings on
+     whatever connection the room has, and an offer that fails to generate
+     because a CDN is slow is worse than a slightly larger download. -->
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/plan.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/app.js"></script>
+<!-- The service worker makes the app open without a connection and makes the
+     browser offer "install to home screen". It never caches the inventory —
+     see the rule at the top of sw.js. Skipped on file://, where registration
+     throws, and on a failure it is a no-op: the app works fine without it. -->
+<script>
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .catch((err) => console.warn('service worker:', err.message));
+  });
+}
+</script>
+</body>
+</html>
