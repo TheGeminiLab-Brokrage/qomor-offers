@@ -157,7 +157,7 @@ const CONFIG = {
    * can open is worse than an ugly one. Pages redirects github.io -> the custom
    * domain once it is live, so links already sent keep working; switch this to
    * the custom domain only after DNS resolves. */
-  shareBaseUrl: 'https://thegeminilab-brokrage.github.io/qomor-offers/',
+  shareBaseUrl: 'https://qomor.thegeminilab.com/',
 
   project: {
     builtUpArea:  '90,000 m²',   // p14 المساحة البنائية الإجمالية
