@@ -149,12 +149,15 @@ const CONFIG = {
   location: 'Badr City, Cairo',
   mapsUrl: 'https://maps.app.goo.gl/9hFUfLZfbe9gFTB76?g_st=aw',
 
-  /* Public URL of this app, once it is deployed. When set, the WhatsApp message
-   * carries a deep link straight to the unit and plan being quoted. Left null
-   * until the client decides where — and whether — this goes public: the app
-   * exposes the full price list, every per-unit discount and live availability
-   * to anyone holding the link. */
-  shareBaseUrl: null,
+  /* Public URL of this app. The WhatsApp message carries a deep link straight
+   * to the unit and plan being quoted.
+   *
+   * Deliberately the github.io address and not qomor.thegeminilab.com yet: the
+   * custom domain has no DNS record at the time of writing, and a link nobody
+   * can open is worse than an ugly one. Pages redirects github.io -> the custom
+   * domain once it is live, so links already sent keep working; switch this to
+   * the custom domain only after DNS resolves. */
+  shareBaseUrl: 'https://thegeminilab-brokrage.github.io/qomor-offers/',
 
   project: {
     builtUpArea:  '90,000 m²',   // p14 المساحة البنائية الإجمالية
