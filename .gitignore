@@ -1,3 +1,4 @@
 raw/
 node_modules/
 *.log
+scripts/pins/tiles-*/
