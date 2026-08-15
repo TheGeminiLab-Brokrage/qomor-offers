@@ -56,7 +56,7 @@ for (const m of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
 
 /* Keys reached only through a helper, never written as a literal at a call
  * site. Listed explicitly so the check does not report them as dead. */
-const INDIRECT = ['dir', 'lang.other', 'lang.switch'];
+const INDIRECT = ['dir', 'lang.en', 'lang.ar'];
 INDIRECT.forEach((k) => used.add(k));
 
 /* Dotted literals that are NOT translation keys. The broad scan above picks up
@@ -96,12 +96,29 @@ for (const k of en) {
   }
 }
 
+/* The assumptions are a list, not a key/value table, so they are held to each
+ * other by COUNT. Getting this wrong is silent in the app — tAssumptions()
+ * falls back to the whole English list, which looks like the translation was
+ * never done rather than like a list that drifted out of step. */
+const countList = (src, name) => {
+  const m = src.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n\\];`));
+  if (!m) throw new Error(`no ${name} array found`);
+  return (m[1].match(/^\s*'/gm) || []).length;
+};
+const nEn = countList(read('js/config.js'), 'ASSUMPTIONS');
+const nAr = countList(i18n, 'ASSUMPTIONS_AR');
+if (nEn !== nAr) {
+  problems.push(`ASSUMPTIONS has ${nEn} entries but ASSUMPTIONS_AR has ${nAr} — `
+    + 'the Arabic footer falls back to English entirely until they match');
+}
+
 if (problems.length) {
   console.error(`i18n: ${problems.length} problem(s)`);
   problems.forEach((p) => console.error('  ✗ ' + p));
   process.exitCode = 1;
 } else {
-  console.log(`i18n: ${en.size} keys, EN and AR in step, all used, placeholders match`);
+  console.log(`i18n: ${en.size} keys, EN and AR in step, all used, placeholders match, `
+    + `${nEn} assumptions both sides`);
 }
 
 module.exports = { problems };

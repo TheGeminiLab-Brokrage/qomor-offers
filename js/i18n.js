@@ -37,8 +37,9 @@ const LANG_STORAGE = 'qomor.lang';
 const STRINGS = {
   en: {
     'dir': 'ltr',
-    'lang.other': 'العربية',
-    'lang.switch': 'Switch to Arabic',
+    /* Names for the two switch segments, in the language currently on screen. */
+    'lang.en': 'English',
+    'lang.ar': 'Arabic',
 
     'brand.strap': 'Business Plaza',
     'brand.by': 'By {developer}',
@@ -157,8 +158,8 @@ const STRINGS = {
 
   ar: {
     'dir': 'rtl',
-    'lang.other': 'English',
-    'lang.switch': 'التبديل إلى الإنجليزية',
+    'lang.en': 'الإنجليزية',
+    'lang.ar': 'العربية',
 
     'brand.strap': 'بيزنس بلازا',
     'brand.by': 'من تطوير {developer}',
@@ -314,25 +315,59 @@ const DATA_AR = {
   currency: { EGP: 'ج.م' },
 };
 
+/**
+ * Arabic for CONFIG's ASSUMPTIONS, in the same order.
+ *
+ * These are the only long-form sentences the app shows that do not come from
+ * the sheet, and they sat in English at the foot of every Arabic screen — the
+ * single most visible untranslated thing in the app. They are kept here rather
+ * than in config.js because config.js is the English source of truth: the PDF
+ * prints from it and the test suite asserts on it.
+ *
+ * Held to the English list by LENGTH, not by index. Adding a sixth assumption
+ * to config.js without adding its Arabic makes tAssumptions() fall back to the
+ * whole English list rather than show five Arabic sentences and quietly lose
+ * the sixth — and scripts/check-i18n.js fails the build for it.
+ */
+const ASSUMPTIONS_AR = [
+  'خطة الأقساط محسوبة على السعر النهائي في الشيت (بعد خصم الوحدة)، وليس على إجمالي سعر الوحدة.',
+  'الصيانة 9% محسوبة على نفس السعر النهائي، وتُدفع دفعة واحدة في الشهر 36.',
+  'أول قسط ربع سنوي يستحق بعد 3 أشهر من التعاقد.',
+  'فروق التقريب تُحمّل على القسط الأخير حتى يطابق مجموع الجدول السعر تمامًا.',
+  'لا تُضاف رسوم نادي أو انتظار أو جراج أو مخزن أو رسوم إدارية. جداول الخطط تُدرج سعر الجراج وسعر المخزن كبندين منفصلين، وهما حاليًا #N/A.',
+];
+
+/** The assumptions in the language on screen. English is the source of truth. */
+function tAssumptions() {
+  const en = (typeof ASSUMPTIONS !== 'undefined') ? ASSUMPTIONS : [];
+  if (LANG === 'en' || en.length !== ASSUMPTIONS_AR.length) return en;
+  return ASSUMPTIONS_AR;
+}
+
 let LANG = DEFAULT_LANG;
 try {
   const saved = localStorage.getItem(LANG_STORAGE);
   if (saved && STRINGS[saved]) LANG = saved;
 } catch { /* private browsing: fall back to the default rather than break */ }
 
-/* ?lang=en beats the stored choice and is then remembered.
+/* ?lang=en beats the stored choice FOR THIS VISIT ONLY.
  *
  * Two reasons it exists. An agent sending an offer link to an English-speaking
  * customer can pin the language rather than hoping. And it is the only way to
  * open a given language from a cold browser profile, which is how the layout
- * gets checked in both directions without clicking. */
+ * gets checked in both directions without clicking.
+ *
+ * It deliberately does NOT write to storage, and that is a fix rather than an
+ * oversight. It used to, which meant opening one ?lang=en link — a link sent to
+ * one English-speaking customer, or the URL used once to check the English
+ * layout — silently pinned that phone to English forever. The app then came up
+ * in English every time afterwards with nothing on screen explaining why, which
+ * reads exactly like "the Arabic version is not working". Only a deliberate tap
+ * on the switch is a preference; a link is just a link. */
 try {
   const wanted = new URLSearchParams(location.search).get('lang');
-  if (wanted && STRINGS[wanted]) {
-    LANG = wanted;
-    localStorage.setItem(LANG_STORAGE, wanted);
-  }
-} catch { /* no URLSearchParams on a very old browser, or storage blocked */ }
+  if (wanted && STRINGS[wanted]) LANG = wanted;
+} catch { /* no URLSearchParams on a very old browser */ }
 
 /** The active language code. */
 function lang() { return LANG; }
@@ -441,15 +476,15 @@ function applyLang() {
       if (attr && key) n.setAttribute(attr.trim(), t(key.trim()));
     }
   });
-  const btn = document.getElementById('btnLang');
-  if (btn) {
-    /* The button shows the language you would switch TO — the convention every
-       bilingual Egyptian site uses. Labelling it with the language you are
-       already reading is the classic way to get this control wrong. */
-    btn.textContent = t('lang.other');
-    btn.title = t('lang.switch');
-    btn.setAttribute('aria-label', t('lang.switch'));
-  }
+  /* The switch shows both codes and lights the active one, so there is no
+     "does this label mean where I am or where I am going?" to get wrong. Each
+     segment is labelled with its own language's name in that language. */
+  document.querySelectorAll('#langSw button[data-lang]').forEach((b) => {
+    const code = b.getAttribute('data-lang');
+    b.setAttribute('aria-pressed', String(code === LANG));
+    b.title = t('lang.' + code);
+    b.setAttribute('aria-label', t('lang.' + code));
+  });
 }
 
 /** Switch language and redraw. `onChange` is app.js's full re-render. */
@@ -462,5 +497,6 @@ function setLang(next, onChange) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { STRINGS, DATA_AR, t, td, lang, isRTL, tWhen, tBand, tRowLabel, bidiSafe };
+  module.exports = { STRINGS, DATA_AR, ASSUMPTIONS_AR, t, td, lang, isRTL,
+                     tWhen, tBand, tRowLabel, bidiSafe };
 }

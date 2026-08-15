@@ -678,7 +678,7 @@ setInterval(renderSync, 20000);
  */
 function renderAll() {
   $('brandBy').textContent = t('brand.by', { developer: CONFIG.developer });
-  $('assumptions').textContent = t('footer.assumptions') + ' ' + ASSUMPTIONS.join(' ');
+  $('assumptions').textContent = t('footer.assumptions') + ' ' + tAssumptions().join(' ');
   renderSync();
   renderWarnings();
   renderBuildings();
@@ -687,9 +687,11 @@ function renderAll() {
 }
 
 applyLang();
-$('btnLang').onclick = () => setLang(lang() === 'ar' ? 'en' : 'ar', renderAll);
+document.querySelectorAll('#langSw button[data-lang]').forEach((b) => {
+  b.onclick = () => setLang(b.getAttribute('data-lang'), renderAll);
+});
 $('brandBy').textContent = t('brand.by', { developer: CONFIG.developer });
-$('assumptions').textContent = t('footer.assumptions') + ' ' + ASSUMPTIONS.join(' ');
+$('assumptions').textContent = t('footer.assumptions') + ' ' + tAssumptions().join(' ');
 
 /**
  * Deep link: #QSP-033/8y reopens a unit and plan.

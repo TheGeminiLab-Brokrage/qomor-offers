@@ -37,13 +37,17 @@
       <span id="brandBy">By El Shihry Developments</span>
     </div>
   </div>
-  <div class="headbtns">
-    <!-- Arabic/English. The label shows the language you would switch TO, which
-         is the convention every bilingual Egyptian site uses — a button reading
-         "العربية" while you are already in Arabic is the classic version of
-         this control done wrong. -->
-    <button class="ghost lang" id="btnLang" type="button">English</button>
-    <button class="ghost" id="btnRefresh" type="button" data-i18n="btn.refresh">Refresh</button>
+  <!-- Arabic/English, as a two-segment switch showing BOTH codes with the
+       active one lit. The previous control was a single button labelled with
+       the language you would switch TO, which is the convention but is also
+       the one control on the page people read backwards — "English" while you
+       are reading Arabic is ambiguous unless you already know the convention.
+       EN|AR states where you are and where you can go at the same time, and
+       needs no translating. It stays in the physical top-right corner in both
+       languages; see the row-reverse rule in the stylesheet. -->
+  <div class="langsw" id="langSw" role="group">
+    <button type="button" data-lang="en">EN</button>
+    <button type="button" data-lang="ar">AR</button>
   </div>
 </header>
 
@@ -52,6 +56,10 @@
 <div class="sync" id="sync">
   <span class="dot" id="syncDot"></span>
   <span id="syncText" data-i18n="sync.loading">Loading inventory…</span>
+  <!-- Refresh belongs next to the timestamp it changes, not up in the header:
+       the only reason to press it is that "updated 16:33" has gone stale, so
+       the reading and the remedy now sit together. -->
+  <button class="ghost tiny" id="btnRefresh" type="button" data-i18n="btn.refresh">Refresh</button>
   <span class="spacer"></span>
   <span id="syncCounts"></span>
 </div>

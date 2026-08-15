@@ -409,10 +409,30 @@ maths to the pound.
 
 ## Arabic
 
-The app is bilingual from 2026-08-14 — a toggle in the header, **Arabic by
-default**, remembered per device, and `?lang=en` on the URL pins a language for
-a shared link. `js/i18n.js` holds both dictionaries; flip `DEFAULT_LANG` to
-change what a new device opens in.
+The app is bilingual from 2026-08-14 — an **EN | AR** switch in the top-right
+corner, **Arabic by default**, remembered per device, and `?lang=en` on the URL
+opens a shared link in a given language. `js/i18n.js` holds both dictionaries;
+flip `DEFAULT_LANG` to change what a new device opens in.
+
+**`?lang=` does not persist, and that is deliberate.** It used to write the
+choice to `localStorage`, which meant opening one English link — a link sent to
+one English-speaking customer, or the URL used once to check the English layout
+— pinned that phone to English *forever*. The app then came up in English every
+time afterwards with nothing on screen explaining why, which is indistinguishable
+from "the Arabic version is not working". Only a deliberate tap on the switch is
+a preference; a link is just a link. Fixed 2026-08-15.
+
+The switch shows **both** codes with the active one lit, rather than the older
+single button labelled with the language you would switch *to*. That convention
+is standard on bilingual Egyptian sites and it is still the one control on the
+page people read backwards — "English" while you are reading Arabic is ambiguous
+unless you already know the convention. `EN | AR` states where you are and where
+you can go at once, and needs no translating.
+
+It stays in the **physical** top-right corner in both languages, which needs
+`flex-direction:row-reverse` on **both** `#top` and `.brand` under `[dir="rtl"]`.
+Reversing only the outer row leaves the wordmark stranded mid-header, because
+`.brand` is itself a flex row that RTL has already mirrored.
 
 Three rules, and they are why `config.js` and the sheet were not touched:
 
@@ -454,6 +474,20 @@ restating it flips the layout back.
 `scripts/check-i18n.js` holds the dictionaries to each other — every key used,
 both languages in step, and no placeholder in Arabic that English lacks (which
 would print a literal `{n}` on screen). It runs as part of `scripts/test.js`.
+
+**The footer assumptions are translated too** (`ASSUMPTIONS_AR` in `i18n.js`),
+and they are the exception to rule 2 above only in presentation: `config.js`
+keeps the English list as the source of truth, because the PDF prints from it
+and the test suite asserts on it. The two lists are held together by **count**,
+not by index — add a sixth English assumption without its Arabic and
+`tAssumptions()` falls back to the whole English list rather than showing five
+Arabic sentences and quietly losing the sixth, and `check-i18n.js` fails the
+build for it.
+
+The **sheet warnings stay English in both languages** on purpose. They name
+spreadsheet rows and unit codes, they are read by the agent rather than the
+customer, and `[lang="ar"] .warnings li` sets them LTR so the bidi algorithm
+stops moving each trailing full stop to the front of the line.
 
 **The PDF is still English.** See the Arabic note under PDF offer — jsPDF drops
 letters — and that is why the app was done first.
