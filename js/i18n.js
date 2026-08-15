@@ -143,6 +143,7 @@ const STRINGS = {
     'offer.downloadedTab': 'PDF downloaded — attach it in the WhatsApp tab that just opened.',
     'offer.downloaded': 'PDF downloaded. ',
     'offer.openWhatsapp': 'Open WhatsApp',
+    'offer.englishFallback': 'This offer came out in ENGLISH — the Arabic pack did not load. Close the app completely, reopen it and try again before sending.',
 
     'footer.assumptions': 'Assumptions pending a signed sample offer:',
     'warn.one': 'One note from the sheet',
@@ -263,6 +264,7 @@ const STRINGS = {
     'offer.downloadedTab': 'تم تنزيل ملف PDF — أرفقه في نافذة واتساب التي فُتحت.',
     'offer.downloaded': 'تم تنزيل ملف PDF. ',
     'offer.openWhatsapp': 'فتح واتساب',
+    'offer.englishFallback': 'خرج هذا العرض بالإنجليزية — لم تُحمّل حزمة اللغة العربية. أغلق التطبيق تمامًا ثم افتحه وأعد المحاولة قبل الإرسال.',
 
     'footer.assumptions': 'افتراضات في انتظار عرض موقّع من العميل:',
     'warn.one': 'ملاحظة واحدة من الشيت',

@@ -67,6 +67,41 @@ let RTL = false;
 let jspdfPending = null;
 let fontsPending = null;
 let arabicFontsPending = null;
+let arabicCodePending = null;
+
+/**
+ * The Arabic shaper and dictionary, fetched if the page did not already load
+ * them.
+ *
+ * THIS EXISTS BECAUSE OF A REAL FAILURE, reported from a phone on 2026-08-15:
+ * the app was in Arabic and the offer came out in English.
+ *
+ * index.html loads js/arabic.js and js/pdf-ar.js with script tags. But the
+ * service worker serves code stale-while-revalidate, so the FIRST visit after a
+ * deploy gets the PREVIOUS index.html — which has no such tags, because they
+ * did not exist yet. js/pdf.js could meanwhile be the new one. The result was
+ * new PDF code running with no shaper and no dictionary, and because every
+ * lookup falls back to English when they are missing, it produced a perfectly
+ * ordinary English document and said nothing.
+ *
+ * Loading them from here removes the dependency on the shell being current: the
+ * only file that has to be new is this one, and if it is not, there is no
+ * Arabic code path to miss in the first place.
+ */
+async function loadArabicSupport() {
+  if (typeof window === 'undefined') return;
+  if (typeof forPdf === 'function' && typeof pt === 'function') return;
+  if (!arabicCodePending) {
+    arabicCodePending = Promise.all([
+      typeof forPdf === 'function' ? null : loadScript('js/arabic.js', 'forPdf'),
+      typeof pt === 'function' ? null : loadScript('js/pdf-ar.js', 'pt'),
+    ]).catch((err) => {
+      arabicCodePending = null;
+      console.warn('arabic support:', err && err.message);
+    });
+  }
+  await arabicCodePending;
+}
 
 /**
  * The Arabic face, fetched only when an offer is actually being written in
@@ -784,7 +819,22 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   RTL = (language || (typeof lang === 'function' ? lang() : 'en')) === 'ar';
 
   await loadJsPDF();
-  if (RTL) await loadArabicFonts();
+  if (RTL) await Promise.all([loadArabicSupport(), loadArabicFonts()]);
+
+  /* IF THE ARABIC MACHINERY IS NOT THERE, SAY SO — do not quietly write English.
+   *
+   * Every lookup in this file falls back to its English argument when pt() is
+   * missing, which is the right behaviour for one stray label and completely
+   * the wrong behaviour for all of them at once: it turns a broken Arabic export
+   * into a flawless English one, and the agent sends it. Reported from a phone
+   * on 2026-08-15 exactly that way. `fellBackToEnglish` is returned so the UI can
+   * tell the agent what they are holding; see the offer button in app.js. */
+  let fellBackToEnglish = false;
+  if (RTL && typeof pt !== 'function') {
+    console.warn('arabic: shaper or dictionary missing — writing this offer in English');
+    fellBackToEnglish = true;
+    RTL = false;
+  }
 
   /* Check rather than destructure straight into it.
    *
@@ -1541,7 +1591,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
          That is a real loss; offerShareText() still carries the link in the
          WhatsApp message, which is the only place it now appears. */
 
-  return { doc, filename: offerFilename(unit, planDef || { label: unit.floorName }) };
+  return {
+    doc,
+    filename: offerFilename(unit, planDef || { label: unit.floorName }),
+    fellBackToEnglish,
+  };
 }
 
 /**
@@ -1595,22 +1649,22 @@ function whatsappUrl(unit, plan, contractDate = new Date()) {
  * @returns {Promise<'shared'|'downloaded'>}
  */
 async function deliverOffer(unit, plan, floor, contractDate = new Date()) {
-  const { doc, filename } = await buildOfferPDF(unit, plan, floor, contractDate);
+  const { doc, filename, fellBackToEnglish } = await buildOfferPDF(unit, plan, floor, contractDate);
   const file = new File([doc.output('blob')], filename, { type: 'application/pdf' });
 
   if (canShareFiles()) {
     try {
       await navigator.share({ files: [file] });
-      return 'shared';
+      return { how: 'shared', fellBackToEnglish };
     } catch (err) {
       // The agent closing the sheet is a decision, not a failure — don't then
       // download a file they just declined to send.
-      if (err && err.name === 'AbortError') return 'shared';
+      if (err && err.name === 'AbortError') return { how: 'shared', fellBackToEnglish };
       console.warn('share failed, downloading instead:', err && err.message);
     }
   }
   doc.save(filename);
-  return 'downloaded';
+  return { how: 'downloaded', fellBackToEnglish };
 }
 
 /** Whether this browser can put a PDF into the system share sheet. */

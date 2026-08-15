@@ -591,6 +591,22 @@ to guess, and a test whose oracle guesses is worse than no test.
 figures and the Maps URL. They have to match the contract the customer signs and
 the address bar they type.
 
+**`js/arabic.js` and `js/pdf-ar.js` are loaded on demand by `pdf.js`, not only by
+the script tags in `index.html`** — and that is a fix, not belt-and-braces.
+Reported from a phone the day this shipped: the app was in Arabic and the offer
+came out in English. The service worker serves code stale-while-revalidate, so
+the first visit after a deploy gets the PREVIOUS `index.html`, which has no tags
+for files that did not exist when it was cached, while `js/pdf.js` could already
+be the new one. New PDF code, no shaper, no dictionary — and because every
+lookup falls back to its English argument, it produced a flawless English
+document and said nothing. Loading them from `pdf.js` removes the dependency on
+the shell being current: the only file that has to be new is `pdf.js` itself,
+and if it is not, there is no Arabic code path to miss.
+
+If they still cannot be loaded, `buildOfferPDF` returns `fellBackToEnglish` and
+the offer button says so **on screen, in red**. A wrong-language document the
+agent is about to send is not a console warning.
+
 ## Performance — where the time actually goes
 
 Measured 2026-08-14 on a throttled "Slow 4G" profile with a cold cache, because

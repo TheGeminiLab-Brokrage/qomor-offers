@@ -619,7 +619,7 @@ $('btnOffer').onclick = async () => {
   note.textContent = '';
   note.className = '';
   try {
-    const how = await deliverOffer(unit, plan, PLANS[unit.floorCode]);
+    const { how, fellBackToEnglish } = await deliverOffer(unit, plan, PLANS[unit.floorCode]);
     const url = whatsappUrl(unit, plan);
     if (how === 'shared') {
       note.textContent = t('offer.shared');
@@ -632,6 +632,13 @@ $('btnOffer').onclick = async () => {
       const a = el('a', null, t('offer.openWhatsapp'));
       a.href = url; a.target = '_blank'; a.rel = 'noopener';
       note.appendChild(a);
+    }
+    /* An Arabic offer that came out English is a WRONG DOCUMENT, not a cosmetic
+       problem, and the agent is about to send it. Say so on screen — the console
+       warning behind this is no use to anyone holding a phone. */
+    if (fellBackToEnglish) {
+      note.textContent = t('offer.englishFallback');
+      note.className = 'bad';
     }
   } catch (err) {
     if (wa && !wa.closed) wa.close();
