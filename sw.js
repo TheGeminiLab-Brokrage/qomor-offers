@@ -11,7 +11,17 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v2';
+const CACHE = 'qomor-offers-v4';
+
+/* Code is revalidated; artwork is not.
+ *
+ * See the fetch handler. This split exists because cache-first on the app's own
+ * JavaScript is a trap: the cached copy is only ever replaced when THIS FILE
+ * changes, so a deploy that touches js/ and not sw.js leaves every returning
+ * phone running the old code forever, and the two halves of the app can drift
+ * out of step with each other. That was reproduced on 2026-08-14 — a browser
+ * held a stale js/pdf.js across three reloads and a cache wipe. */
+const CODE = /\.(js|css|html|webmanifest)$/i;
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets — the renders and the floor drawings,
@@ -28,9 +38,10 @@ const SHELL = [
   'js/engine.js',
   'js/pdf.js',
   'js/app.js',
-  /* jsPDF is NOT precached. At 410 KB it competed for bandwidth with the very
-   * first paint on a phone, which is the moment that matters most; it is
-   * fetched and cached on first use instead, and app.js warms it when idle. */
+  /* jsPDF is NOT precached, and neither are the embedded brand fonts. At 410 KB
+   * and 291 KB they competed for bandwidth with the very first paint on a
+   * phone, which is the moment that matters most; both are fetched and cached
+   * on first use instead, and app.js warms them when idle. */
   'site.webmanifest',
   'assets/logo.png',
   'assets/icons/icon-192.png',
@@ -84,11 +95,36 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  /* Everything else — code, styles, renders, floor plans — cache-first. These
-   * are versioned by deploy, and the renders are big enough that re-fetching
-   * them for every PDF would be wasteful on mobile data. A miss is fetched and
-   * kept, which is how the print assets end up available offline after the
-   * first offer has been generated. */
+  /* CODE — stale-while-revalidate. The cached copy is served immediately, so
+   * startup stays as fast as cache-first, but a fresh copy is fetched in the
+   * background and written over it, so the NEXT load is current. That is what
+   * makes a deploy reach a returning phone without this file having to change.
+   * The offline guarantee is unaffected: if the revalidation fails, the cached
+   * copy has already been served. */
+  if (CODE.test(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const hit = await cache.match(req);
+      const fetching = fetch(req).then((fresh) => {
+        if (fresh.ok && fresh.type === 'basic') cache.put(req, fresh.clone());
+        return fresh;
+      });
+      if (hit) {
+        // Don't let the tab close out from under the revalidation.
+        event.waitUntil(fetching.catch(() => {}));
+        return hit;
+      }
+      try { return await fetching; } catch { return Response.error(); }
+    })());
+    return;
+  }
+
+  /* EVERYTHING ELSE — renders, floor plans, icons — cache-first. This artwork
+   * is effectively immutable and big enough (about 5 MB) that re-fetching it
+   * for every PDF would be wasteful on mobile data. A miss is fetched and kept,
+   * which is how the print assets end up available offline after the first
+   * offer has been generated. Replace a render and its filename changes, or
+   * bump CACHE. */
   event.respondWith((async () => {
     const hit = await caches.match(req);
     if (hit) return hit;

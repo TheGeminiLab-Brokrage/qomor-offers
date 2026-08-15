@@ -396,6 +396,11 @@ function selectUnit(code) {
   if (!u || u.state !== 'available') { note(`${code} is not available.`); return; }
   state.unit = u;
   state.planId = state.planId || CONFIG.plans[0].id;
+  /* An offer is now likely, and the agent is about to spend a while on the
+     payment plan and the schedule. Spend that time pulling the 4.6 MB of
+     renders and drawings the export needs, so the button is not followed by
+     half a minute of "Preparing…" on a phone. Fire-and-forget; see pdf.js. */
+  warmOfferArtwork(u);
   $('stepPlan').hidden = false;
   renderUnits();
   renderUnitCard();

@@ -71,8 +71,11 @@ g.Image = class {
 };
 
 // The UMD build prefers module.exports under Node, so wire it onto the fake
-// window that pdf.js reads from.
+// window that pdf.js reads from. Same for the brand fonts: in the browser
+// pdf.js pulls both in with a <script> tag on first use, and finding them
+// already on `window` is exactly how it decides not to.
 g.jspdf = require(path.join(root, 'vendor/jspdf.umd.min.js'));
+g.QOMOR_FONTS = require(path.join(root, 'vendor/fonts.js'));
 
 const load = (...files) =>
   files.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')
