@@ -31,14 +31,20 @@ function el(tag, cls, text) {
 
 /* ------------------------------------------------------------------ sync -- */
 
+/* Dates and times are formatted en-GB in BOTH languages, deliberately.
+ * The client's instruction is that numbers stay Western — an Arabic locale
+ * would render them ١٥/٠٨/٢٠٢٦, which would not match the contract the
+ * customer signs. See the header of js/i18n.js. */
+const DATE_LOCALE = 'en-GB';
+
 /** "just now" / "3 minutes ago" — how stale the number on screen actually is. */
 function ago(date) {
   const s = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
-  if (s < 45) return 'just now';
+  if (s < 45) return t('ago.now');
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`;
+  if (m < 60) return t(m === 1 ? 'ago.min' : 'ago.mins', { n: m });
   const h = Math.round(m / 60);
-  return `${h} hour${h === 1 ? '' : 's'} ago`;
+  return t(h === 1 ? 'ago.hour' : 'ago.hours', { n: h });
 }
 
 function renderSync() {
@@ -47,24 +53,27 @@ function renderSync() {
   bar.classList.toggle('stale', !state.live && !!state.fetchedAt);
 
   if (state.live && state.fetchedAt) {
-    const t = state.fetchedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    text.innerHTML = `<b>Live inventory</b> · updated ${t} (${ago(state.fetchedAt)})`;
+    const clock = state.fetchedAt.toLocaleTimeString(DATE_LOCALE, { hour: '2-digit', minute: '2-digit' });
+    text.innerHTML = t('sync.liveAt', { live: t('sync.live'), time: clock, ago: ago(state.fetchedAt) });
   } else if (state.fetchedAt) {
-    text.innerHTML = `<b>Offline copy</b> · saved ${state.fetchedAt.toLocaleDateString()} — check availability before issuing an offer`;
+    text.innerHTML = t('sync.offlineAt', {
+      offline: t('sync.offline'),
+      date: state.fetchedAt.toLocaleDateString(DATE_LOCALE),
+    });
   } else {
-    text.textContent = 'Loading inventory…';
+    text.textContent = t('sync.loading');
   }
 
   const avail = state.units.filter((u) => u.state === 'available').length;
   counts.textContent = state.units.length
-    ? `${state.units.length} units · ${avail} available`
+    ? t('sync.counts', { units: state.units.length, available: avail })
     : '';
 }
 
 async function refresh({ quiet } = {}) {
   const btn = $('btnRefresh');
   btn.disabled = true;
-  if (!quiet) $('syncText').textContent = 'Reading the inventory sheet…';
+  if (!quiet) $('syncText').textContent = t('sync.reading');
 
   const res = await loadInventory();
   state.units = res.units;
@@ -85,11 +94,11 @@ async function refresh({ quiet } = {}) {
     if (!fresh) {
       state.unit = null; state.planId = null;
       $('stepPlan').hidden = true;
-      note(`${'That unit'} has been removed from the sheet.`);
+      note(t('err.removed'));
     } else if (fresh.state !== 'available') {
       state.unit = fresh; state.planId = null;
       $('stepPlan').hidden = true;
-      note(`${fresh.code} is no longer available — it is now "${fresh.status}".`);
+      note(t('err.noLonger', { code: fresh.code, status: fresh.status }));
     } else {
       state.unit = fresh;
     }
@@ -106,14 +115,18 @@ function renderWarnings() {
   const list = [];
   if (noteMsg) list.push(noteMsg);
   if (!state.live && state.units.length) {
-    list.push('Could not reach the live sheet, so these prices may be out of date.');
+    list.push(t('warn.stale'));
   }
   list.push(...state.warnings);
 
   box.innerHTML = '';
   if (!list.length) { box.hidden = true; return; }
   box.hidden = false;
-  box.appendChild(el('b', null, list.length === 1 ? 'One note from the sheet' : `${list.length} notes from the sheet`));
+  /* The notes themselves stay in English — they name spreadsheet rows and unit
+     codes, and they are read by the agent, not the customer. Only the heading
+     that counts them is translated. */
+  box.appendChild(el('b', null,
+    list.length === 1 ? t('warn.one') : t('warn.many', { n: list.length })));
   const ul = el('ul');
   list.forEach((w) => ul.appendChild(el('li', null, w)));
   box.appendChild(ul);
@@ -172,8 +185,8 @@ function hoverBuilding(id) {
   }
   if (!id) { tip.className = ''; return; }
   const avail = sellable(id).length;
-  tip.querySelector('b').textContent = `Building ${id}`;
-  tip.querySelector('i').textContent = avail ? `${avail} available` : 'None available';
+  tip.querySelector('b').textContent = t('building.n', { id });
+  tip.querySelector('i').textContent = avail ? t('building.available', { n: avail }) : t('building.none');
   tip.className = 'on' + (avail ? '' : ' off');
 }
 
@@ -193,7 +206,8 @@ function renderBuildings() {
     const n = sellable(o.value).length;
     // Say why a building cannot be chosen rather than just refusing.
     o.disabled = n === 0;
-    o.textContent = `Building ${o.value}` + (n ? ` — ${n} available` : ' — none available');
+    o.textContent = t('building.n', { id: o.value })
+      + ' — ' + (n ? t('building.available', { n }) : t('building.none'));
   }
 
   const id = state.buildingId;
@@ -201,8 +215,8 @@ function renderBuildings() {
   $('buildingChip').classList.toggle('on', !!id);
   if (id) sel.value = id;
   $('buildingMeta').textContent = id
-    ? `${sellable(id).length} available of ${unitsIn(id).length}`
-    : 'Tap a building on the view';
+    ? t('building.meta', { available: sellable(id).length, total: unitsIn(id).length })
+    : t('building.tapHint');
 }
 
 const TYPE_LABEL = { Retail: 'retail', Medical: 'clinics', Admin: 'admin' };
@@ -216,17 +230,21 @@ const TYPE_LABEL = { Retail: 'retail', Medical: 'clinics', Admin: 'admin' };
  * app editorialising about stock it was showing. The sheet decides what a unit
  * is; this only reads it back.
  */
+/* `t` is the translate function now, so these counters are named `tally` —
+ * a local `t` here shadowed it and every label in this file went blank. */
 function useOf(units) {
-  const t = {};
-  units.forEach((u) => { const k = u.type || '?'; t[k] = (t[k] || 0) + 1; });
-  const ranked = Object.keys(t).sort((a, b) => t[b] - t[a]);
+  const tally = {};
+  units.forEach((u) => { const k = u.type || '?'; tally[k] = (tally[k] || 0) + 1; });
+  const ranked = Object.keys(tally).sort((a, b) => tally[b] - tally[a]);
   if (!ranked.length) return '—';
-  return ranked.map((k) => TYPE_LABEL[k] || k.toLowerCase()).join(' + ');
+  return ranked.map((k) => td('typePlural', TYPE_LABEL[k] || k.toLowerCase())).join(' + ');
 }
 function mix(units) {
-  const t = {};
-  units.forEach((u) => { const k = u.type || '?'; t[k] = (t[k] || 0) + 1; });
-  return Object.keys(t).map((k) => `${t[k]} ${TYPE_LABEL[k] || k.toLowerCase()}`).join(' · ');
+  const tally = {};
+  units.forEach((u) => { const k = u.type || '?'; tally[k] = (tally[k] || 0) + 1; });
+  return Object.keys(tally)
+    .map((k) => `${tally[k]} ${td('typePlural', TYPE_LABEL[k] || k.toLowerCase())}`)
+    .join(' · ');
 }
 
 function selectBuilding(id) {
@@ -252,11 +270,12 @@ function renderFloors() {
     const row = el('div', 'row');
     row.appendChild(el('div', 'id', f.code));
     row.appendChild(el('div', 'pill' + (avail ? '' : ' none'),
-      avail ? `${avail} available` : mine.length ? 'None available' : 'Not released'));
+      avail ? t('building.available', { n: avail })
+            : mine.length ? t('floor.none') : t('floor.notReleased')));
     btn.appendChild(row);
 
     const body = el('div');
-    body.appendChild(el('div', 'val', f.name));
+    body.appendChild(el('div', 'val', td('floor', f.name)));
     /* What the floor IS matters more than how many units it holds — a buyer
        asks for "the clinics floor", not "the 78-unit floor". */
     body.appendChild(el('div', 'lab', mine.length ? useOf(mine) : '—'));
@@ -296,18 +315,16 @@ function renderPlan() {
 
   if (!pinned.length) {
     note.hidden = false;
-    note.textContent =
-      `No units are pinned on the ${plan.label} drawing yet — pick from the panel,` +
-      ` or place pins with pin-tool.html.`;
+    note.textContent = t('plan.nonePinned', { floor: td('floor', plan.label) });
   } else if (pinned.length !== mine.length) {
     note.hidden = false;
-    note.textContent = `${pinned.length} of ${mine.length} units are pinned on this drawing; the rest are in the panel.`;
+    note.textContent = t('plan.somePinned', { pinned: pinned.length, total: mine.length });
   } else {
     note.hidden = true;
   }
 
   $('planImg').src = plan.image;
-  $('planImg').alt = `${plan.label} plan`;
+  $('planImg').alt = t('plan.alt', { floor: td('floor', plan.label) });
   svg.innerHTML = '';
   for (const u of pinned) {
     const [x, y] = plan.pins[u.code];
@@ -321,7 +338,7 @@ function renderPlan() {
       const tip = $('planTip');
       tip.querySelector('b').textContent = u.code;
       tip.querySelector('i').textContent =
-        `${u.area != null ? u.area + ' m²' : ''} · ${u.state === 'available' ? fmt(u.price) + ' ' + CONFIG.currency : u.status}`;
+        `${u.area != null ? u.area + ' m²' : ''} · ${u.state === 'available' ? fmt(u.price) + ' ' + td('currency', CONFIG.currency) : u.status}`;
       tip.className = 'on' + (u.state === 'available' ? '' : ' off');
       const r = $('planWrap').getBoundingClientRect();
       const b = c.getBoundingClientRect();
@@ -356,23 +373,29 @@ function renderUnits() {
   box.innerHTML = '';
 
   const all = sellable(state.buildingId, state.floorCode);
-  $('unitHint').textContent = `— ${all.length} available on this floor`;
+  $('unitHint').textContent = t('step.3.hint', { n: all.length });
 
-  // Type filter options come from what is actually on this floor.
+  /* Type filter options come from what is actually on this floor. The VALUE
+     stays the sheet's own English — it is what visibleUnits() filters on — and
+     only the label shown is translated. */
   const sel = $('fltType'), had = sel.value;
   const types = [...new Set(all.map((u) => u.type).filter(Boolean))].sort();
   sel.innerHTML = '';
-  sel.appendChild(el('option', null, 'Any')).value = '';
-  types.forEach((t) => { const o = el('option', null, t); o.value = t; sel.appendChild(o); });
+  sel.appendChild(el('option', null, t('filter.any'))).value = '';
+  types.forEach((ty) => {
+    const o = el('option', null, td('type', ty));
+    o.value = ty;
+    sel.appendChild(o);
+  });
   if (types.includes(had)) sel.value = had;
 
   const list = visibleUnits();
   $('fltCount').textContent = list.length === all.length
-    ? `${all.length} available`
-    : `${list.length} of ${all.length} available shown`;
+    ? t('building.available', { n: all.length })
+    : t('filter.someShown', { shown: list.length, total: all.length });
 
   if (!list.length) {
-    box.appendChild(el('p', 'empty', all.length ? 'Nothing matches this filter.' : 'Nothing available on this floor.'));
+    box.appendChild(el('p', 'empty', all.length ? t('empty.filter') : t('empty.floor')));
     return;
   }
 
@@ -380,20 +403,21 @@ function renderUnits() {
     const btn = el('button', `unit ${u.state}` + (state.unit && state.unit.code === u.code ? ' on' : ''));
     btn.type = 'button';
     btn.appendChild(el('div', 'code', u.code));
-    btn.appendChild(el('div', 'meta', `${u.area != null ? u.area + ' m²' : '—'}${u.type ? ' · ' + u.type : ''}`));
+    btn.appendChild(el('div', 'meta',
+      `${u.area != null ? bidiSafe(u.area + ' m²') : '—'}${u.type ? ' · ' + td('type', u.type) : ''}`));
     btn.appendChild(el('div', 'price', fmt(u.price)));
 
     // Only an explicitly Available unit is clickable. Everything else — sold,
     // reserved, blank, misspelt — is inert.
     if (u.state === 'available') btn.onclick = () => selectUnit(u.code);
-    else { btn.disabled = true; btn.title = `Status: ${u.status}`; }
+    else { btn.disabled = true; btn.title = t('unit.status', { status: u.status }); }
     box.appendChild(btn);
   }
 }
 
 function selectUnit(code) {
   const u = state.units.find((x) => x.code === code);
-  if (!u || u.state !== 'available') { note(`${code} is not available.`); return; }
+  if (!u || u.state !== 'available') { note(t('err.notAvailable', { code })); return; }
   state.unit = u;
   state.planId = state.planId || CONFIG.plans[0].id;
   /* An offer is now likely, and the agent is about to spend a while on the
@@ -417,27 +441,31 @@ function renderUnitCard() {
   const cell = (label, value) => {
     const d = el('div');
     d.appendChild(el('span', null, label));
-    d.appendChild(el('b', null, value));
+    /* bidiSafe, because these values are a mix: "QSP-033" and "39.78 m²" are
+       Latin atoms that Arabic would otherwise reorder, while "تجاري" and
+       "الدور الأول" belong to the Arabic run and are left alone. */
+    d.appendChild(el('b', null, bidiSafe(value)));
     box.appendChild(d);
   };
-  cell('Unit', u.code);
-  cell('Floor', u.floorName || u.floorCode);
-  cell('Type', u.type || '—');
+  const cur = td('currency', CONFIG.currency);
+  cell(t('unit.unit'), u.code);
+  cell(t('unit.floor'), td('floor', u.floorName || u.floorCode));
+  cell(t('unit.type'), td('type', u.type) || '—');
   /* Gross area only. The sheet also carries a smaller net figure; the client
      instructed 2026-08-12 that it must never be shown or printed, so it is read
      for the internal consistency check in sheet.js and goes no further. */
-  cell('Area', `${u.area ?? '—'} m²`);
-  if (u.outdoor) cell('Outdoor', `${u.outdoor} m²`);
+  cell(t('unit.area'), `${u.area ?? '—'} m²`);
+  if (u.outdoor) cell(t('unit.outdoor'), `${u.outdoor} m²`);
   /* Show a discount as a rate AND as money. "20%" is an abstraction; "you save
      1,479,764 EGP" is what the customer actually hears. The rate comes from
      the sheet per unit — it is NOT a fixed rate: across the available stock it
      runs at 10%, 15% and 20% depending on the unit. */
   if (u.discount) {
-    cell('List price', fmt(u.total) + ' ' + CONFIG.currency);
-    cell(`Discount ${pctLabel(u.discount)}`, '−' + fmt(u.total - u.price) + ' ' + CONFIG.currency);
-    cell('Price after discount', fmt(u.price) + ' ' + CONFIG.currency);
+    cell(t('unit.listPrice'), fmt(u.total) + ' ' + cur);
+    cell(t('unit.discount', { pct: pctLabel(u.discount) }), '−' + fmt(u.total - u.price) + ' ' + cur);
+    cell(t('unit.priceAfter'), fmt(u.price) + ' ' + cur);
   } else {
-    cell('Price', fmt(u.price) + ' ' + CONFIG.currency);
+    cell(t('unit.price'), fmt(u.price) + ' ' + cur);
   }
 }
 
@@ -449,14 +477,15 @@ function renderPlans() {
   const box = $('plans');
   box.innerHTML = '';
 
-  const label = el('label', 'planLabel', 'Payment plan');
+  const label = el('label', 'planLabel', t('pay.plan'));
   label.htmlFor = 'planSelect';
 
   const sel = el('select', 'planSelect');
   sel.id = 'planSelect';
   for (const p of CONFIG.plans) {
-    const opt = el('option', null,
-      `${p.label} — ${pctLabel(p.down)} down · ${p.instalments} quarterly instalments`);
+    const opt = el('option', null, t('pay.option', {
+      label: td('plan', p.label), down: pctLabel(p.down), n: p.instalments,
+    }));
     opt.value = p.id;
     if (p.id === state.planId) opt.selected = true;
     sel.appendChild(opt);
@@ -479,15 +508,16 @@ function renderSchedule() {
   const stat = (label, value) => {
     const d = el('div');
     d.appendChild(el('span', null, label));
-    d.appendChild(el('b', null, value));
+    d.appendChild(el('b', null, bidiSafe(value)));
     sum.appendChild(d);
   };
-  stat('Down payment', fmt(summary.downPayment));
-  stat('Quarterly', fmt(summary.instalmentAmount));
-  stat('Instalments', String(summary.instalmentCount));
-  stat(`Maintenance ${pctLabel(CONFIG.maintenanceRate)}`, fmt(summary.maintenance));
-  stat('Total payable', fmt(summary.totalPayable));
-  stat('Delivery', fmtDate(summary.deliveryDate));
+  const cur = td('currency', CONFIG.currency);
+  stat(t('pay.down'), fmt(summary.downPayment));
+  stat(t('pay.quarterly'), fmt(summary.instalmentAmount));
+  stat(t('pay.instalments'), String(summary.instalmentCount));
+  stat(t('pay.maintenance', { pct: pctLabel(CONFIG.maintenanceRate) }), fmt(summary.maintenance));
+  stat(t('pay.total'), fmt(summary.totalPayable));
+  stat(t('pay.delivery'), fmtDate(summary.deliveryDate));
   box.appendChild(sum);
 
   /* The saving, stated once, plainly, at the point the customer is deciding.
@@ -495,18 +525,20 @@ function renderSchedule() {
   if (summary.discountPct) {
     const save = el('div', 'saving');
     save.appendChild(el('b', null,
-      `You save ${fmt(summary.discountAmount)} ${CONFIG.currency}`));
-    save.appendChild(el('span', null,
-      `${pctLabel(summary.discountPct)} off — list price ${fmt(summary.listPrice)} ` +
-      `${CONFIG.currency}, your price ${fmt(summary.price)} ${CONFIG.currency}. ` +
-      `The instalment plan below is calculated on the discounted price.`));
+      t('save.headline', { amount: fmt(summary.discountAmount), currency: cur })));
+    save.appendChild(el('span', null, t('save.detail', {
+      pct: pctLabel(summary.discountPct),
+      list: fmt(summary.listPrice),
+      price: fmt(summary.price),
+      currency: cur,
+    })));
     box.appendChild(save);
   }
 
   const table = el('table');
   const thead = el('thead');
   const hr = el('tr');
-  ['Due', 'Payment', 'Date', 'Amount', '% of price'].forEach((h, i) => {
+  [t('table.due'), t('table.payment'), t('table.date'), t('table.amount'), t('table.pct')].forEach((h, i) => {
     const th = el('th', i >= 3 ? 'num' : null, h);
     hr.appendChild(th);
   });
@@ -521,24 +553,25 @@ function renderSchedule() {
        stopping to reconcile a per-year figure. scheduleByYear still computes
        block.total/pct — they are used by the tests, and by nothing on screen. */
     const yr = el('tr', 'yr');
-    const td = el('td', null, block.label);
-    td.colSpan = 5;
-    yr.appendChild(td);
+    /* `td` is the data-translation helper now — this cell used to shadow it. */
+    const cellYear = el('td', null, tBand(block.year));
+    cellYear.colSpan = 5;
+    yr.appendChild(cellYear);
     tbody.appendChild(yr);
 
     for (const r of block.rows) {
       const tr = el('tr', r.milestone ? 'milestone' : null);
-      tr.appendChild(el('td', null, r.when));
-      tr.appendChild(el('td', null, r.label));
-      tr.appendChild(el('td', null, fmtDate(r.date)));
+      tr.appendChild(el('td', null, tWhen(r.month)));
+      tr.appendChild(el('td', null, tRowLabel(r)));
+      tr.appendChild(el('td', null, bidiSafe(fmtDate(r.date))));
       tr.appendChild(el('td', 'num', fmt(r.amount)));
       tr.appendChild(el('td', 'num', fmtPct(r.pct)));
       tbody.appendChild(tr);
     }
   }
   const tot = el('tr', 'total');
-  tot.appendChild(el('td', null, 'Total'));
-  tot.appendChild(el('td', null, `${summary.planLabel} plan`));
+  tot.appendChild(el('td', null, t('table.total')));
+  tot.appendChild(el('td', null, t('pay.planOf', { label: td('plan', summary.planLabel) })));
   tot.appendChild(el('td', null, ''));
   tot.appendChild(el('td', 'num', fmt(scheduleTotal(rows))));
   tot.appendChild(el('td', 'num', ''));
@@ -552,7 +585,7 @@ function renderSchedule() {
   const paid = rows.filter((r) => !r.maintenance).reduce((s, r) => s + r.amount, 0);
   if (paid !== summary.price) {
     box.appendChild(el('p', 'empty',
-      `⚠ Schedule sums to ${fmt(paid)} but the price is ${fmt(summary.price)} — do not issue this offer.`));
+      t('err.footing', { paid: fmt(paid), price: fmt(summary.price) })));
   }
 }
 
@@ -582,21 +615,21 @@ $('btnOffer').onclick = async () => {
 
   btn.disabled = true;
   const was = btn.textContent;
-  btn.textContent = 'Preparing…';
+  btn.textContent = t('offer.preparing');
   note.textContent = '';
   note.className = '';
   try {
     const how = await deliverOffer(unit, plan, PLANS[unit.floorCode]);
     const url = whatsappUrl(unit, plan);
     if (how === 'shared') {
-      note.textContent = 'Sent to the share sheet.';
+      note.textContent = t('offer.shared');
     } else if (wa && !wa.closed) {
       wa.location = url;
-      note.textContent = 'PDF downloaded — attach it in the WhatsApp tab that just opened.';
+      note.textContent = t('offer.downloadedTab');
     } else {
       // Popup blocked. Give them something to click rather than failing.
-      note.textContent = 'PDF downloaded. ';
-      const a = el('a', null, 'Open WhatsApp');
+      note.textContent = t('offer.downloaded');
+      const a = el('a', null, t('offer.openWhatsapp'));
       a.href = url; a.target = '_blank'; a.rel = 'noopener';
       note.appendChild(a);
     }
@@ -634,8 +667,29 @@ setInterval(() => { if (!document.hidden) refresh({ quiet: true }); }, REFRESH_M
 // Keep the "3 minutes ago" honest between fetches.
 setInterval(renderSync, 20000);
 
-$('assumptions').textContent =
-  'Assumptions pending a signed sample offer: ' + ASSUMPTIONS.join(' ');
+/**
+ * Redraw everything that carries text.
+ *
+ * The app rebuilds its own DOM on every refresh anyway, so switching language
+ * is just a re-render — there is no separate translation pass over live nodes,
+ * and therefore nothing that can be missed and left in the wrong language.
+ * The one exception is the static furniture in index.html, which applyLang()
+ * handles through its data-i18n attributes.
+ */
+function renderAll() {
+  $('brandBy').textContent = t('brand.by', { developer: CONFIG.developer });
+  $('assumptions').textContent = t('footer.assumptions') + ' ' + ASSUMPTIONS.join(' ');
+  renderSync();
+  renderWarnings();
+  renderBuildings();
+  if (state.floorCode) { renderFloors(); renderUnits(); }
+  if (state.unit) { renderUnitCard(); renderPlans(); renderSchedule(); }
+}
+
+applyLang();
+$('btnLang').onclick = () => setLang(lang() === 'ar' ? 'en' : 'ar', renderAll);
+$('brandBy').textContent = t('brand.by', { developer: CONFIG.developer });
+$('assumptions').textContent = t('footer.assumptions') + ' ' + ASSUMPTIONS.join(' ');
 
 /**
  * Deep link: #QSP-033/8y reopens a unit and plan.
@@ -658,12 +712,12 @@ function openDeepLink() {
   }
 
   const u = state.units.find((x) => x.code === String(code).toUpperCase());
-  if (!u) { note(`This link points at ${code}, which is not in the sheet.`); return; }
+  if (!u) { note(t('err.badLink', { code })); return; }
 
   selectBuilding(u.building);
   selectFloor(u.floorCode);
   if (u.state !== 'available') {
-    note(`${u.code} is no longer available — it is now "${u.status}".`);
+    note(t('err.noLonger', { code: u.code, status: u.status }));
     return;
   }
   if (planId && CONFIG.plans.some((p) => p.id === planId)) state.planId = planId;

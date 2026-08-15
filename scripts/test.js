@@ -300,11 +300,25 @@ function worked() {
   ms.forEach((r) => console.log(`     ${String(r.month).padStart(3)}mo  ${G.fmt(r.amount).padStart(12)}  ${r.label}`));
 }
 
+/* The Arabic UI, checked the only way it usefully can be from here.
+ *
+ * A missing translation key is the characteristic bug of a bilingual app and is
+ * nearly invisible — t() falls back to English, so a half-translated screen
+ * ships unless somebody happens to look at that exact panel in that exact
+ * language. check-i18n.js holds the two dictionaries to each other and to the
+ * call sites; running it from here means it cannot be forgotten. */
+function i18nCheck() {
+  const { problems } = require('./check-i18n.js');
+  ok(problems.length === 0, 'i18n: EN and AR dictionaries consistent');
+  problems.forEach((p) => ok(false, `i18n: ${p}`));
+}
+
 (async () => {
   if (process.argv.includes('--live')) {
     try { await live(); } catch (e) { ok(false, `live sheet: ${e.message}`); }
   }
   worked();
+  i18nCheck();
 
   console.log('\n══ Assumptions still to be settled by a signed sample offer');
   G.ASSUMPTIONS.forEach((a) => console.log(`   • ${a}`));

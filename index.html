@@ -33,18 +33,25 @@
          as live text instead and stays crisp. -->
     <img class="logo" src="assets/logo.png" alt="Qomor" width="578" height="260">
     <div class="names">
-      <b>Business Plaza</b>
-      <span>By El Shihry Developments</span>
+      <b data-i18n="brand.strap">Business Plaza</b>
+      <span id="brandBy">By El Shihry Developments</span>
     </div>
   </div>
-  <button class="ghost" id="btnRefresh" type="button">Refresh</button>
+  <div class="headbtns">
+    <!-- Arabic/English. The label shows the language you would switch TO, which
+         is the convention every bilingual Egyptian site uses — a button reading
+         "العربية" while you are already in Arabic is the classic version of
+         this control done wrong. -->
+    <button class="ghost lang" id="btnLang" type="button">English</button>
+    <button class="ghost" id="btnRefresh" type="button" data-i18n="btn.refresh">Refresh</button>
+  </div>
 </header>
 
 <!-- Live sync status. The dot colour is the whole story at a glance:
      amber = live, red = stale/offline. -->
 <div class="sync" id="sync">
   <span class="dot" id="syncDot"></span>
-  <span id="syncText">Loading inventory…</span>
+  <span id="syncText" data-i18n="sync.loading">Loading inventory…</span>
   <span class="spacer"></span>
   <span id="syncCounts"></span>
 </div>
@@ -53,7 +60,7 @@
 
 <main>
   <section class="step" id="stepBuilding">
-    <h2><i>1</i> Building <small>Tap a building on the view, or use the cards</small></h2>
+    <h2><i>1</i> <span data-i18n="step.1">Building</span> <small data-i18n="step.1.hint">Tap a building on the view, or use the cards</small></h2>
     <!-- The masterplan picker. Its only output is selectBuilding(id) — the same
          call the cards make — so the render, a 3D view and a plain list stay
          interchangeable and nothing downstream knows which was used. -->
@@ -88,18 +95,18 @@
          and a way to switch without going back to the image. -->
     <div id="buildingBar">
       <span class="chip" id="buildingChip">—</span>
-      <select id="buildingSel" aria-label="Switch building"></select>
+      <select id="buildingSel" data-i18n-attr="aria-label:building.switch"></select>
       <span id="buildingMeta"></span>
     </div>
   </section>
 
   <section class="step" id="stepFloor" hidden>
-    <h2><i>2</i> Floor</h2>
+    <h2><i>2</i> <span data-i18n="step.2">Floor</span></h2>
     <div class="grid" id="floors"></div>
   </section>
 
   <section class="step" id="stepUnit" hidden>
-    <h2><i>3</i> Unit <small id="unitHint"></small></h2>
+    <h2><i>3</i> <span data-i18n="step.3">Unit</span> <small id="unitHint"></small></h2>
     <!-- The drawing is the selector; the side panel is the way to find a unit
          by number rather than by eye. Two routes to the same selectUnit(). -->
     <div id="unitLayout">
@@ -108,7 +115,7 @@
              has one entry. A unit that is not for sale has no business showing
              its price to a customer sitting beside the agent. -->
         <div class="legend">
-          <span><i class="sw available"></i>Available units only</span>
+          <span><i class="sw available"></i><span data-i18n="plan.legend">Available units only</span></span>
         </div>
         <!-- Sold pins are RED: a grey "sold" reads too close to a grey
              "not released". -->
@@ -126,19 +133,21 @@
           <!-- Closed until asked for: most of the time the agent wants the list,
                not the controls. -->
           <details id="fltBox">
-            <summary>Filter &amp; sort</summary>
+            <summary data-i18n="filter.title">Filter &amp; sort</summary>
             <label>
-              <span>Type</span>
-              <select id="fltType"><option value="">Any</option></select>
+              <span data-i18n="filter.type">Type</span>
+              <!-- Options are rebuilt by renderUnits() from the sheet's own
+                   types, so they are translated there, not here. -->
+              <select id="fltType"></select>
             </label>
             <label>
-              <span>Sort</span>
+              <span data-i18n="filter.sort">Sort</span>
               <select id="fltSort">
-                <option value="unit">Unit number</option>
-                <option value="price">Price, low to high</option>
-                <option value="price-desc">Price, high to low</option>
-                <option value="area">Area, small to large</option>
-                <option value="area-desc">Area, large to small</option>
+                <option value="unit" data-i18n="sort.unit">Unit number</option>
+                <option value="price" data-i18n="sort.price">Price, low to high</option>
+                <option value="price-desc" data-i18n="sort.price-desc">Price, high to low</option>
+                <option value="area" data-i18n="sort.area">Area, small to large</option>
+                <option value="area-desc" data-i18n="sort.area-desc">Area, large to small</option>
               </select>
             </label>
           </details>
@@ -149,12 +158,12 @@
   </section>
 
   <section class="step" id="stepPlan" hidden>
-    <h2><i>4</i> Payment plan</h2>
+    <h2><i>4</i> <span data-i18n="step.4">Unit details</span> <small data-i18n="step.4.hint">Price, payment plan and the offer</small></h2>
     <div class="unitcard" id="unitCard"></div>
     <div class="plans" id="plans"></div>
     <div id="schedule"></div>
     <div class="offerbar">
-      <button class="cta" id="btnOffer" type="button">Send offer on WhatsApp</button>
+      <button class="cta" id="btnOffer" type="button" data-i18n="offer.send">Send offer on WhatsApp</button>
       <span id="offerNote"></span>
     </div>
   </section>
@@ -174,6 +183,10 @@
      inventory — on a phone hotspot that alone was most of a two-minute wait.
      js/pdf.js pulls it in on demand, and app.js prefetches it once the page is
      idle, so the first offer is still instant. -->
+<!-- i18n first: config.js is untouched English (it is the source of truth and
+     the tests assert on it), and everything drawn on screen is translated at
+     render time on top of it. See the header comment in js/i18n.js. -->
+<script src="js/i18n.js"></script>
 <script src="js/config.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/sheet.js"></script>

@@ -84,9 +84,15 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
 
   const rows = [];
   const down = round(base * plan.down);
+  /* Every row carries BOTH an English `label`/`when` and a language-neutral
+   * `labelKey`. The strings stay exactly as they were — the tests assert on
+   * them and the PDF prints them — while the Arabic UI renders from the key
+   * instead (see tRowLabel in i18n.js). Adding the key rather than replacing
+   * the string is what keeps this change invisible to everything downstream. */
   rows.push({
     month: 0,
     label: 'Down payment',
+    labelKey: { kind: 'down' },
     when: monthLabel(0),
     date: at(0),
     amount: down,
@@ -115,6 +121,12 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
       label: ms[r.i]
         ? `Instalment ${r.i} of ${plan.instalments} (includes ${pctLabel(ms[r.i])} milestone)`
         : `Instalment ${r.i} of ${plan.instalments}`,
+      labelKey: {
+        kind: 'instalment',
+        i: r.i,
+        n: plan.instalments,
+        milestone: ms[r.i] ? pctLabel(ms[r.i]) : null,
+      },
       when: monthLabel(month),
       date: at(month),
       amount,
@@ -127,6 +139,7 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
   rows.push({
     month: CONFIG.maintenanceDueMonth,
     label: `Maintenance (${pctLabel(CONFIG.maintenanceRate)})`,
+    labelKey: { kind: 'maintenance', pct: pctLabel(CONFIG.maintenanceRate) },
     when: monthLabel(CONFIG.maintenanceDueMonth),
     date: at(CONFIG.maintenanceDueMonth),
     amount: maintenance,

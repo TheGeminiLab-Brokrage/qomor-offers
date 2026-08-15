@@ -269,6 +269,34 @@ which are enormous (one is 8128×5120 / 66 MB). It resamples and re-encodes them
 to about 4 MB total, because these offers travel by WhatsApp. A finished offer
 is about 4.9 MB.
 
+### Arabic in the PDF — do not attempt with jsPDF as it stands
+
+The client asked for an Arabic offer on 2026-08-14. **jsPDF's Arabic support
+silently drops letters**, which is worse than having none on a document that
+quotes a price. Measured, not assumed — text extracted back out of a generated
+PDF with `pdftotext`:
+
+| Input | jsPDF wrote |
+|---|---|
+| `بيانات الوحدة` | `ﺑﻴﺎﻧﺎ ﻟﻮﺣﺪ` |
+| `خطة السداد` | `ﺧﻄﺔ ﻟﺴﺪ` |
+| `مشاركة العرض على واتساب` | `ﻣﺸﺎﻛﺔ ﻟﻌﺮ ﻋﻠ ﺗﺴﺎ` |
+
+Every sample lost characters, with no error raised. What was established:
+
+- jsPDF hooks `postProcessText` with both an Arabic shaper and a bidi engine.
+  Its shaping is what loses the letters; its ordering is fine.
+- **Pre-shaping does not help** — jsPDF re-processes the already-shaped text and
+  mangles it again.
+- Pre-shaping *and* pre-reversing yields complete letters but reversed output,
+  because jsPDF then reverses a second time.
+- So the route is: disable jsPDF's own hook, and do shaping and ordering
+  ourselves. That hook lives in the minified bundle's internals, shared with the
+  hex-encoding path, so it needs care and a test asserting the Arabic
+  letter-for-letter on every offer — not a quick patch.
+
+The app was translated first for exactly this reason. See Arabic above.
+
 Traps worth keeping:
 
 - **`doc.rect(x,y,w,h)` before `doc.clip()` does not clip.** The default style
@@ -378,6 +406,57 @@ maths to the pound.
       **PARK**". Q's offers crop past it, but a Building M offer shows the whole
       sheet, so the old name reaches the customer on 88 of the 108 units the app
       can currently sell. The app cannot fix artwork
+
+## Arabic
+
+The app is bilingual from 2026-08-14 — a toggle in the header, **Arabic by
+default**, remembered per device, and `?lang=en` on the URL pins a language for
+a shared link. `js/i18n.js` holds both dictionaries; flip `DEFAULT_LANG` to
+change what a new device opens in.
+
+Three rules, and they are why `config.js` and the sheet were not touched:
+
+1. **Numbers stay Western.** 1,404,000 in both languages, on the client's
+   instruction — Arabic-Indic digits would not match the contract the customer
+   signs. Dates are formatted `en-GB` in both languages too.
+2. **The sheet and CONFIG stay English.** They are the source of truth and the
+   tests assert on them. `DATA_AR` maps sheet values to Arabic at render time,
+   and anything unmapped **falls through unchanged** — a floor or unit type that
+   operations add without telling anyone still shows, in English, rather than
+   silently becoming blank.
+3. **Brand names are not translated.** Qomor, Sky Plaza, El Shihry Developments.
+
+`engine.js` gained a `labelKey` on every schedule row *alongside* its existing
+English `label`. The strings are untouched, so the tests and the PDF are
+unaffected; the Arabic UI renders from the key instead.
+
+### The bidi trap, which cost the most time
+
+Arabic is right-to-left but numbers inside it are not, and the bidirectional
+algorithm has no way to know that `20%` or `15 Aug 2026` is a single atom. Left
+alone it renders them **`%20`**, **`Aug 2026 15`** and **`m² 39.78`** — each
+wrong, none an error. Every interpolated value therefore goes through
+`bidiSafe()`, which wraps Latin/numeric values in Unicode isolates (U+2066 /
+U+2069) and leaves Arabic ones alone. One rule, applied where values are
+substituted, rather than a CSS class to remember at each call site.
+
+Related trap, found by breaking it: **CSS `direction:ltr` must only ever go on
+an element whose entire content is a number.** Putting it on `#syncCounts`,
+which holds Arabic words beside its figures, reversed the segment order and
+made `530 وحدة · 108 متاحة` render as `530 متاحة · 108 وحدة` — the two counts
+swapped labels, silently. Only `.num` and `.price` carry it.
+
+RTL needed almost no CSS: the layout was already flexbox, grid and logical
+`text-align`, all of which follow `dir` on their own. In particular **do not**
+mirror `grid-template-columns` — grid's inline axis already reverses, so
+restating it flips the layout back.
+
+`scripts/check-i18n.js` holds the dictionaries to each other — every key used,
+both languages in step, and no placeholder in Arabic that English lacks (which
+would print a literal `{n}` on screen). It runs as part of `scripts/test.js`.
+
+**The PDF is still English.** See the Arabic note under PDF offer — jsPDF drops
+letters — and that is why the app was done first.
 
 ## Performance — where the time actually goes
 

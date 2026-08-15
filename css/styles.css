@@ -111,7 +111,7 @@ main{padding:22px;max-width:1080px;margin:0 auto}
 #floors{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
 .card{
   background:var(--glass);border:1px solid var(--edge);border-radius:12px;
-  padding:9px 11px;text-align:left;display:flex;flex-direction:column;gap:8px;
+  padding:9px 11px;text-align:start;display:flex;flex-direction:column;gap:8px;
   transition:background .16s,border-color .16s,transform .16s;
 }
 .card:hover:not(:disabled){background:var(--glass-hi);border-color:var(--edge-hi);transform:translateY(-2px)}
@@ -142,7 +142,7 @@ main{padding:22px;max-width:1080px;margin:0 auto}
 
 .units{display:grid;gap:7px;grid-template-columns:repeat(auto-fill,minmax(118px,1fr))}
 .unit{
-  border-radius:11px;padding:9px 10px;text-align:left;
+  border-radius:11px;padding:9px 10px;text-align:start;
   background:var(--glass);border:1px solid var(--edge);
   display:flex;flex-direction:column;gap:3px;
 }
@@ -213,9 +213,9 @@ main{padding:22px;max-width:1080px;margin:0 auto}
 .summary b{display:block;font-size:17px;font-weight:600;margin-top:4px}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--edge)}
+th,td{padding:8px 10px;text-align:start;border-bottom:1px solid var(--edge)}
 th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
-td.num,th.num{text-align:right}
+td.num,th.num{text-align:end}
 tr.yr td{background:rgba(255,255,255,.05);font-weight:600;font-size:11px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--amber-soft)}
 tr.milestone td{color:var(--amber-soft)}
@@ -305,12 +305,12 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 #units{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;min-height:0}
 #units .unit{
   display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;
-  border-radius:9px;padding:7px 9px;text-align:left;
+  border-radius:9px;padding:7px 9px;text-align:start;
   background:transparent;border:1px solid transparent;
 }
 #units .unit .code{font-size:12.5px;font-weight:600}
 #units .unit .meta{font-size:10px;color:var(--faint);grid-column:1}
-#units .unit .price{font-size:11.5px;color:var(--dim);grid-column:2;grid-row:1/3;text-align:right}
+#units .unit .price{font-size:11.5px;color:var(--dim);grid-column:2;grid-row:1/3;text-align:end}
 #units .unit.available{border-color:rgba(61,214,140,.34)}
 #units .unit.available:hover{background:rgba(61,214,140,.13)}
 #units .unit.reserved{opacity:.62;cursor:not-allowed}
@@ -347,3 +347,56 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 }
 .saving b{display:block;font-size:17px;font-weight:700;color:#7CE8B4}
 .saving span{display:block;font-size:11.5px;color:var(--dim);margin-top:4px;line-height:1.5}
+
+/* ---------- right-to-left ----------
+   Arabic, added 2026-08-14. There is deliberately almost nothing here: the
+   layout was already built on flexbox, grid and logical text-align, all of
+   which follow the document's `dir` on their own. Three things do not.
+
+   NOT included, and it was the first instinct: mirrored grid-template-columns.
+   Grid's inline axis already reverses under dir="rtl", so #unitLayout's
+   `1fr 290px` puts the panel on the left in Arabic by itself and `grid-column:2`
+   lands on the correct side in both. Restating them mirrored flips them a
+   second time and puts everything back where it started. */
+
+/* 1. Type. No Arabic webfont is loaded — that would put a download back on the
+      first-paint path this app spent a session clearing, and every phone it
+      runs on ships a good Arabic face. Name the best ones, let the system pick. */
+[lang="ar"] body,
+[lang="ar"] button,
+[lang="ar"] select,
+[lang="ar"] input{
+  font-family:"Segoe UI","Noto Naskh Arabic","Geeza Pro",Tahoma,system-ui,sans-serif;
+}
+
+/* 2. Figures stay left-to-right. ONLY elements whose whole content is a number
+      may go here, and that restriction is the entire point: the first version
+      also listed #syncCounts and .unitcard b, which hold Arabic WORDS beside
+      their numbers. Forcing direction:ltr on a run of Arabic reverses the order
+      its segments appear in, and "530 وحدة · 108 متاحة" rendered as
+      "530 متاحة · 108 وحدة" — the two counts silently swapped labels. */
+[lang="ar"] .num,
+[lang="ar"] .price{
+  direction:ltr;
+  unicode-bidi:isolate;
+}
+
+/* 3. The sheet warnings are English whichever language the UI is in — they name
+      spreadsheet rows and unit codes and are read by the agent, not the
+      customer. Left in an RTL paragraph the bidi algorithm moves each trailing
+      full stop to the front of the line. Set the block LTR and they read
+      normally. */
+[lang="ar"] .warnings li{direction:ltr;text-align:start}
+
+/* 4. The header now carries two buttons rather than one. */
+.headbtns{display:flex;align-items:center;gap:8px}
+.ghost.lang{font-weight:600;min-width:62px}
+
+/* The divider beside the wordmark is a physical border, so it has to swap. */
+[dir="rtl"] .brand .names{
+  padding-left:0;padding-right:14px;
+  border-left:0;border-right:1px solid var(--edge);
+}
+@media (max-width:560px){
+  [dir="rtl"] .brand .names{padding-left:0;padding-right:10px}
+}

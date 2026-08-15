@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v5';
+const CACHE = 'qomor-offers-v6';
 
 /* Code is revalidated; artwork is not.
  *
@@ -32,6 +32,7 @@ const SHELL = [
   './',
   'index.html',
   'css/styles.css',
+  'js/i18n.js',
   'js/config.js',
   'js/plan.js',
   'js/sheet.js',
