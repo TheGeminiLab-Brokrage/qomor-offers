@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v4';
+const CACHE = 'qomor-offers-v5';
 
 /* Code is revalidated; artwork is not.
  *
@@ -51,10 +51,21 @@ const SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    // Individually, not addAll: one 404 in the list would otherwise abort the
-    // whole install and leave the app with no offline support at all.
-    await Promise.all(SHELL.map((url) =>
-      cache.add(new Request(url, { cache: 'reload' })).catch(() => {})));
+    /* Individually, not addAll: one 404 in the list would otherwise abort the
+     * whole install and leave the app with no offline support at all.
+     *
+     * And NOT `new Request(url, { cache: 'reload' })`, which is the obvious
+     * thing and was here until 2026-08-14. It forces a fresh network request
+     * for every file — but the browser has just downloaded index.html, the CSS
+     * and all five scripts to render the page, so the install pulled the entire
+     * shell down a SECOND time, competing with the 395 KB hero preload and the
+     * inventory fetch on exactly the first visit, on exactly the worst
+     * connection. The user's phone sat on "Loading inventory…" for ~40 s.
+     *
+     * The plain form reuses what the browser already has. Serving a slightly
+     * stale shell costs nothing now that code is stale-while-revalidate below:
+     * it corrects itself on the next load either way. */
+    await Promise.all(SHELL.map((url) => cache.add(url).catch(() => {})));
     self.skipWaiting();
   })());
 });
