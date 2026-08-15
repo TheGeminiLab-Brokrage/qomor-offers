@@ -46,6 +46,16 @@ let DISPLAY = 'helvetica';                // Marcellus — titles
 let SANS    = 'helvetica';                // Montserrat — everything else
 
 /**
+ * Whether THIS document is being written in Arabic.
+ *
+ * Module-level rather than threaded through every function because the whole
+ * document is one language: there is no page, and no label, that is Arabic
+ * while its neighbour is English. Set once by buildOfferPDF, read by everything
+ * below, and reset on every build so one export cannot leak into the next.
+ */
+let RTL = false;
+
+/**
  * Pull in jsPDF and the brand fonts the first time they are actually needed.
  *
  * Together they are 700 KB and nothing about browsing the inventory needs
@@ -56,6 +66,30 @@ let SANS    = 'helvetica';                // Montserrat — everything else
  */
 let jspdfPending = null;
 let fontsPending = null;
+let arabicFontsPending = null;
+
+/**
+ * The Arabic face, fetched only when an offer is actually being written in
+ * Arabic.
+ *
+ * 376 KB of base64 for a font with no Latin-only use — see the split in
+ * scripts/make-fonts.js. An English export must not pay for it, and an Arabic
+ * one only pays on the first export of the session.
+ *
+ * Failure is NOT fatal, on the same reasoning as the Latin fonts: registerFonts
+ * falls back and warns. The Arabic will not render, which is bad, but throwing
+ * here would give the agent nothing at all, which is worse.
+ */
+async function loadArabicFonts() {
+  if (typeof window === 'undefined' || window.QOMOR_FONTS_AR) return;
+  if (!arabicFontsPending) {
+    arabicFontsPending = loadScript('vendor/fonts-ar.js', 'QOMOR_FONTS_AR').catch((err) => {
+      arabicFontsPending = null;
+      console.warn('arabic fonts:', err && err.message);
+    });
+  }
+  await arabicFontsPending;
+}
 
 async function loadJsPDF() {
   /* The two are tracked SEPARATELY and on purpose.
@@ -147,7 +181,8 @@ function loadScript(src, expect) {
  * document rather than an exception.
  */
 function registerFonts(doc) {
-  const list = (typeof window !== 'undefined' && window.QOMOR_FONTS) || [];
+  const w = typeof window !== 'undefined' ? window : {};
+  const list = (w.QOMOR_FONTS || []).concat(RTL ? (w.QOMOR_FONTS_AR || []) : []);
   try {
     for (const [file, family, style, b64] of list) {
       doc.addFileToVFS(file, b64);
@@ -156,11 +191,77 @@ function registerFonts(doc) {
   } catch (err) {
     console.warn('fonts:', err && err.message);
   }
-  const ok = doc.getFontList && doc.getFontList().Montserrat;
+  const fonts = (doc.getFontList && doc.getFontList()) || {};
+
+  /* An Arabic offer is set ENTIRELY in Amiri, display and body alike, and that
+   * is a decision rather than a shortcut. Marcellus and Montserrat have not one
+   * Arabic glyph between them, so the Arabic has to come from Amiri whatever
+   * else happens; mixing Amiri's Arabic with Montserrat's Latin inside a single
+   * run would mean switching fonts mid-string, which jsPDF cannot do in one
+   * text() call. Amiri carries full ASCII, so "QSE-050" and "1,404,000" set in
+   * it perfectly well, and one Naskh serif throughout reads as a considered
+   * document rather than as two documents spliced together.
+   *
+   * It also quietly removes the Marcellus digit trap — see titleFont(). */
+  if (RTL && fonts.Amiri) {
+    DISPLAY = 'Amiri';
+    SANS    = 'Amiri';
+    return true;
+  }
+  const ok = fonts.Montserrat;
   DISPLAY = ok ? 'Marcellus'  : 'helvetica';
   SANS    = ok ? 'Montserrat' : 'helvetica';
   if (!ok) console.warn('fonts: falling back to Helvetica — text may not render on some phones');
+  if (RTL) console.warn('fonts: Arabic face missing — the Arabic will not render');
   return !!ok;
+}
+
+/* ------------------------------------------------------- direction, and text */
+
+/**
+ * The single funnel every piece of text in the document passes through.
+ *
+ * English: strips to what the Latin subsets can draw, exactly as before.
+ * Arabic: shapes into presentation forms and reorders into drawing order — see
+ * js/arabic.js for why both are necessary and why jsPDF cannot be trusted to do
+ * either. Nothing may call doc.text() without coming through here, because a
+ * string that skips it is not merely styled differently, it is unreadable:
+ * disconnected letters in backwards order.
+ */
+function TX(s) {
+  const str = String(s == null ? '' : s);
+  if (!RTL) return latin(str);
+  return typeof forPdf === 'function' ? forPdf(str) : str;
+}
+
+/**
+ * Mirror a text anchor inside the box it belongs to.
+ *
+ * The user's decision (2026-08-15) was that the TEXT flips and the LAYOUT stays:
+ * the Arabic reads right to left and the table columns reverse, but photographs,
+ * panels and the cover keep their positions. So mirroring is done per CONTAINER
+ * rather than per page — an anchor at `x` inside the box [x0, x1] moves to the
+ * mirror-image position within that same box, and nothing outside the box
+ * moves. Mirroring the whole page instead would send a panel's caption to the
+ * far side of the sheet from the panel it captions.
+ *
+ * The default box is the page's content width, which is the right container for
+ * most of the document.
+ */
+const ax = (x, x0 = M, x1 = PW - M) => (RTL ? x0 + x1 - x : x);
+
+/** Options for a run that STARTS at its anchor, and one that ENDS at it. */
+const startAlign = () => (RTL ? { align: 'right' } : undefined);
+const endAlign   = () => (RTL ? undefined : { align: 'right' });
+
+/** Draw a run that starts at `x` within [x0, x1]. */
+function tStart(doc, s, x, y, x0, x1) {
+  doc.text(TX(s), ax(x, x0, x1), y, startAlign());
+}
+
+/** Draw a run that ends at `x` within [x0, x1] — prices, times, figures. */
+function tEnd(doc, s, x, y, x0, x1) {
+  doc.text(TX(s), ax(x, x0, x1), y, endAlign());
 }
 
 function imageElement(src) {
@@ -366,11 +467,28 @@ function latin(s) {
  * accumulated tracking.
  */
 function caps(doc, text, x, y, opts = {}) {
-  const { size = 7, colour = MUTED, track = 0.55, style = 'bold' } = opts;
+  const { size = 7, colour = MUTED, track = 0.55, style = 'bold', x0, x1 } = opts;
   doc.setFont(SANS, style).setFontSize(size);
   setText(doc, colour);
+
+  /* ARABIC IS NEVER TRACKED OUT, and never uppercased.
+   *
+   * Letterspacing is the whole idea of this label style in Latin, and it is
+   * actively destructive in Arabic: the script is joined, so adding space
+   * between characters pulls the joins apart and prints what looks like a
+   * word broken into pieces. toUpperCase() is merely a no-op on Arabic, but
+   * skipping it costs nothing and says so.
+   *
+   * Losing the tracking also removes the reason this helper could never be
+   * right-aligned — jsPDF measures a run without the character spacing it is
+   * about to add, so an aligned tracked run overhangs its anchor. With the
+   * tracking off, the measurement is honest and Arabic can align right. */
+  if (RTL) {
+    tStart(doc, text, x, y, x0, x1);
+    return;
+  }
   doc.setCharSpace(track);
-  doc.text(String(text).toUpperCase(), x, y);
+  doc.text(latin(String(text).toUpperCase()), x, y);
   doc.setCharSpace(0);
 }
 
@@ -388,8 +506,10 @@ function caps(doc, text, x, y, opts = {}) {
  * than Marcellus at the same point size.
  */
 function titleFont(doc, text, size) {
-  const numeric = /\d/.test(String(text));
-  doc.setFont(numeric ? SANS : DISPLAY, numeric ? 'bold' : 'normal')
+  /* Moot in Arabic: the whole document is Amiri, whose figures are ordinary
+     figures, so there is no digit to protect against. */
+  const numeric = !RTL && /\d/.test(String(text));
+  doc.setFont(numeric ? SANS : DISPLAY, numeric || RTL ? 'bold' : 'normal')
      .setFontSize(numeric ? size * 0.84 : size);
   return doc;
 }
@@ -400,6 +520,8 @@ function header(doc, title, sub) {
   setFill(doc, GOLD);
   doc.rect(0, 18, PW, 0.7, 'F');
 
+  /* The wordmark stays in the same corner in both languages, exactly as it does
+     in the app's own header — it is a picture of a name, not a run of text. */
   if (WORDMARK) {
     const h = 7.4;
     doc.addImage(WORDMARK.data, WORDMARK.format, M, 5.3, h * WORDMARK_ASPECT, h, undefined, 'FAST');
@@ -409,11 +531,15 @@ function header(doc, title, sub) {
 
   setText(doc, PAPER);
   titleFont(doc, title, 13);
-  doc.text(latin(title), PW / 2, 12.2, { align: 'center' });
+  doc.text(TX(title), PW / 2, 12.2, { align: 'center' });
   if (sub) {
     setText(doc, GOLD);
     doc.setFont(SANS, 'normal').setFontSize(7.6);
-    doc.text(latin(sub), PW - M, 12, { align: 'right' });
+    /* Pinned to the right in BOTH languages, and not mirrored with everything
+       else. The wordmark opposite it does not move — it is a picture of a name
+       — so mirroring the subtitle drove it straight underneath the logo. When
+       one end of a pair is fixed, the other has to be too. */
+    doc.text(TX(sub), PW - M, 12, { align: 'right' });
   }
 }
 
@@ -423,44 +549,59 @@ function footer(doc, unit, page, dark) {
   doc.line(M, PH - 12, PW - M, PH - 12);
   doc.setFont(SANS, 'normal').setFontSize(6.6);
   setText(doc, dark ? ON_NAVY_2 : MUTED);
-  doc.text(latin(`${CONFIG.name} · ${CONFIG.location} · Unit ${unit.code}`), M, PH - 7.5);
-  doc.text('Indicative offer — subject to availability at the time of contract.',
+  tStart(doc, RTL
+    ? pt('foot.unit', { name: pd('name', CONFIG.name),
+                        location: pd('location', CONFIG.location), code: unit.code })
+    : `${CONFIG.name} · ${CONFIG.location} · Unit ${unit.code}`, M, PH - 7.5);
+  doc.text(TX(RTL ? pt('foot.indicative')
+                  : 'Indicative offer — subject to availability at the time of contract.'),
            PW / 2, PH - 7.5, { align: 'center' });
+  /* The page number is a figure, and figures sit at the outer edge in both
+     directions — mirroring it would put it under the document's own name. */
   doc.text(String(page), PW - M, PH - 7.5, { align: 'right' });
 }
 
 function sectionTitle(doc, text, y) {
   titleFont(doc, text, 21);
   setText(doc, INK);
-  doc.text(latin(text), M, y);
+  tStart(doc, text, M, y);
   setFill(doc, GOLD);
-  doc.rect(M, y + 3.4, 22, 1, 'F');
+  /* The rule under a section title marks where the title BEGINS, so it moves
+     to the other end with the text. */
+  doc.rect(RTL ? PW - M - 22 : M, y + 3.4, 22, 1, 'F');
   return y + 13;
 }
 
 /** A small label/value stack, the unit of most of these pages. */
-function stat(doc, label, value, x, y, valueSize = 13, colour = INK) {
-  caps(doc, label, x, y, { size: 6.6, colour: colour === INK ? MUTED : ON_NAVY_2, track: 0.5 });
+function stat(doc, label, value, x, y, valueSize = 13, colour = INK, box) {
+  const [x0, x1] = box || [M, PW - M];
+  caps(doc, label, x, y, {
+    size: 6.6, colour: colour === INK ? MUTED : ON_NAVY_2, track: 0.5, x0, x1,
+  });
   doc.setFont(SANS, 'bold').setFontSize(valueSize);
   setText(doc, colour);
-  doc.text(latin(value), x, y + 6.6);
+  tStart(doc, value, x, y + 6.6, x0, x1);
 }
 
 /** A label / value line in a list, value flush to `right`. */
 function listRow(doc, label, value, x, right, y, opts = {}) {
   const { size = 8, colour = MUTED, valueColour = INK } = opts;
+  /* The pair is mirrored inside its OWN row, so the label stays at the reading
+     edge and the figure stays at the far one — the relationship the row is for
+     survives, which it would not if only one of the two moved. */
   doc.setFont(SANS, 'normal').setFontSize(size);
   setText(doc, colour);
-  doc.text(latin(label), x, y);
+  tStart(doc, label, x, y, x, right);
   doc.setFont(SANS, 'bold');
   setText(doc, valueColour);
-  doc.text(latin(value), right, y, { align: 'right' });
+  tEnd(doc, value, right, y, x, right);
 }
 
 /** A gold bullet, used for every feature and term in the document. */
-function bullet(doc, x, y, colour = GOLD) {
+function bullet(doc, x, y, colour = GOLD, box) {
+  const [x0, x1] = box || [M, PW - M];
   setFill(doc, colour);
-  doc.circle(x, y - 1.1, 0.8, 'F');
+  doc.circle(ax(x, x0, x1), y - 1.1, 0.8, 'F');
 }
 
 /**
@@ -625,7 +766,7 @@ function warmOfferArtwork(unit) {
   }
 }
 
-async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
+async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), language) {
   /* Last line of defence. The UI already refuses to select anything not
    * available, but the offer is the document a customer acts on, so the export
    * refuses too rather than trusting its caller. */
@@ -636,7 +777,14 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   }
   if (!plan) throw new Error('No payment plan selected.');
 
+  /* THE OFFER IS WRITTEN IN THE LANGUAGE THE AGENT IS READING, on the user's
+     instruction 2026-08-15. `language` overrides for the tests, which have no
+     i18n.js and must be able to ask for either. Assigned before anything else
+     happens because registerFonts and every helper below read it. */
+  RTL = (language || (typeof lang === 'function' ? lang() : 'en')) === 'ar';
+
   await loadJsPDF();
+  if (RTL) await loadArabicFonts();
 
   /* Check rather than destructure straight into it.
    *
@@ -654,13 +802,38 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   registerFonts(doc);
 
   const { rows, summary } = buildSchedule(unit, plan, contractDate);
+  /* Dates stay en-GB in both languages — the client's standing instruction is
+     that every figure on the offer matches the contract the customer signs. */
   const today = contractDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const isClinic = /medical/i.test(unit.type || '');
   const art = CONFIG.art || {};
-  const money = (n) => `${fmt(n)} ${CONFIG.currency}`;
+
+  /* CONFIG values on their way to the page. `D` is the same idea as td() in
+     i18n.js and behaves the same way: unknown values fall through UNCHANGED
+     rather than disappearing, so a unit type operations invent tomorrow still
+     prints — in English, visibly needing a translation — instead of leaving a
+     blank where the customer expects a word. */
+  const D = (kind, value) => (RTL && typeof pd === 'function' ? pd(kind, value) : value);
+  const S = (key, vars, english) => (RTL && typeof pt === 'function' ? pt(key, vars) : english);
+
+  /* The project's name, address and developer, in the client's own Arabic. */
+  const NAME = D('name', CONFIG.name);
+  const PLACE = D('location', CONFIG.location);
+  const DEV = D('developer', CONFIG.developer);
+
+  const money = (n) => `${fmt(n)} ${D('currency', CONFIG.currency)}`;
   const bId = unit.building;
-  const bName = (CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`;
-  const where = `${unit.type || ''} · ${unit.floorName || unit.floorCode} · ${bName}`.replace(/^ · /, '');
+  const bNameEn = (CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`;
+  /* "Building Q" is a label with a letter in it, not a name — the letter is the
+     client's own and stays Latin, the word around it is translated. Anything
+     that is not of that shape falls through unchanged, same rule as everywhere
+     else here. */
+  const bName = RTL && /^Building (.+)$/.test(bNameEn)
+    ? S('bld.name', { id: /^Building (.+)$/.exec(bNameEn)[1] }, bNameEn)
+    : bNameEn;
+  const floorName = D('floor', unit.floorName || unit.floorCode);
+  const where = `${D('type', unit.type) || ''} · ${floorName} · ${bName}`.replace(/^ · /, '');
+  const area = (n) => `${n} m²`;
   let page = 0;
 
   /** A white content page with the navy header bar. */
@@ -706,27 +879,29 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   setFill(doc, NAVY);
   doc.rect(0, PH * 0.74, PW, PH * 0.26, 'F');
   setDraw(doc, GOLD); doc.setLineWidth(0.6);
-  doc.line(M, PH * 0.74, M + 26, PH * 0.74);
+  /* The gold rule marks where the title starts, so it travels with it. */
+  doc.line(ax(M), PH * 0.74, ax(M + 26), PH * 0.74);
 
   setText(doc, PAPER);
-  doc.setFont(DISPLAY, 'normal').setFontSize(26);
-  doc.text('Offer', M, PH * 0.74 + 16);
+  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(26);
+  tStart(doc, S('cover.offer', null, 'Offer'), M, PH * 0.74 + 16);
   doc.setFont(SANS, 'bold').setFontSize(10.5);
   setText(doc, GOLD);
-  doc.text(`Unit ${unit.code}`, M, PH * 0.74 + 24.5);
+  tStart(doc, S('cover.unit', { code: unit.code }, `Unit ${unit.code}`), M, PH * 0.74 + 24.5);
   doc.setFont(SANS, 'normal').setFontSize(8.4);
   setText(doc, ON_NAVY);
-  doc.text(latin(where), M, PH * 0.74 + 31);
-  doc.text(today, PW - M, PH * 0.74 + 31, { align: 'right' });
+  tStart(doc, where, M, PH * 0.74 + 31);
+  tEnd(doc, today, PW - M, PH * 0.74 + 31);
   doc.setFontSize(7.6);
   setText(doc, ON_NAVY_2);
-  doc.text(latin(`${CONFIG.location}  ·  Developed by ${CONFIG.developer}`),
-           PW - M, PH * 0.74 + 24.5, { align: 'right' });
+  tEnd(doc, S('cover.by', { location: PLACE, developer: DEV },
+              `${CONFIG.location}  ·  Developed by ${CONFIG.developer}`),
+       PW - M, PH * 0.74 + 24.5);
 
   /* ---------- 2. location ---------- */
   const P = CONFIG.project || {};
   const locImg = A.location;
-  newPage('Location', CONFIG.location);
+  newPage(S('page.location', null, 'Location'), PLACE);
 
   /* The map gets the left two thirds of the page rather than a quarter of it.
      On the old combined project page it was one panel among four, and the
@@ -737,25 +912,38 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     drawInBox(doc, locImg, mapX, mapY, mapW, mapH);
   }
 
+  /* The text column keeps its position beside the map — the user's ruling was
+     that the layout stays and the text flips — so every run on it mirrors
+     inside [rx, PW - M] and not inside the page. */
   const rx = M + 168, rw = PW - M - rx;
-  doc.setFont(DISPLAY, 'normal').setFontSize(19);
+  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(19);
   setText(doc, INK);
-  doc.text(latin(CONFIG.location), rx, mapY + 8);
+  tStart(doc, PLACE, rx, mapY + 8, rx, PW - M);
   setFill(doc, GOLD);
-  doc.rect(rx, mapY + 12, 22, 1, 'F');
+  doc.rect(ax(rx, rx, PW - M) - (RTL ? 22 : 0), mapY + 12, 22, 1, 'F');
+
+  /* The place names come from the client's own catalogue in Arabic; the times
+     are rebuilt, because "2 min" is "دقيقتان" and not "2 دقيقة" — Arabic counts
+     two with a dual form that takes no digit at all. See minutes() in pdf-ar.js. */
+  const trip = (r) => [D('places', r[0]),
+                       RTL && typeof minutes === 'function' ? minutes(r[1]) : r[1]];
 
   let ly = mapY + 26;
-  caps(doc, 'Within Badr City', rx, ly, { colour: INK, size: 7 });
+  caps(doc, S('loc.within', null, 'Within Badr City'), rx, ly,
+       { colour: INK, size: 7, x0: rx, x1: PW - M });
   ly += 7;
   (P.nearby || []).slice(0, 6).forEach((r, i) => {
-    listRow(doc, r[0], r[1], rx, PW - M, ly + i * 6.2);
+    const [place, time] = trip(r);
+    listRow(doc, place, time, rx, PW - M, ly + i * 6.2);
   });
 
   ly += 6 * 6.2 + 8;
-  caps(doc, 'The wider east Cairo', rx, ly, { colour: INK, size: 7 });
+  caps(doc, S('loc.wider', null, 'The wider east Cairo'), rx, ly,
+       { colour: INK, size: 7, x0: rx, x1: PW - M });
   ly += 7;
   (P.reach || []).slice(0, 6).forEach((r, i) => {
-    listRow(doc, r[0], r[1], rx, PW - M, ly + i * 6.2);
+    const [place, time] = trip(r);
+    listRow(doc, place, time, rx, PW - M, ly + i * 6.2);
   });
 
   /* The Google Maps link, as a button. See mapPin() for why. */
@@ -763,63 +951,77 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     const btnY = mapY + mapH - 20, btnH = 14;
     setFill(doc, GOLD);
     doc.roundedRect(rx, btnY, rw, btnH, 1.8, 1.8, 'F');
-    mapPin(doc, rx + 10, btnY + 5.8, NAVY);
-    caps(doc, 'Open in Google Maps', rx + 17, btnY + 8.4, { size: 8.6, colour: NAVY, track: 0.4 });
+    /* The pin leads the label, so it swaps ends with it. */
+    mapPin(doc, ax(rx + 10, rx, PW - M), btnY + 5.8, NAVY);
+    caps(doc, S('loc.maps', null, 'Open in Google Maps'), rx + 17, btnY + 8.4,
+         { size: 8.6, colour: NAVY, track: 0.4, x0: rx, x1: PW - M });
     /* The whole button is the hit target, not just the glyph run — these offers
        are read on a phone, where a 7pt link is unusable. */
     doc.link(rx, btnY, rw, btnH, { url: CONFIG.mapsUrl });
 
     doc.setFont(SANS, 'normal').setFontSize(6.4);
     setText(doc, MUTED);
-    doc.text(CONFIG.mapsUrl, rx, btnY + btnH + 5);
+    /* A URL is never mirrored or reordered — it is a machine string that has to
+       be typeable exactly as printed, so it is drawn LTR whatever the page is
+       doing, anchored at the reading edge like the label above it. */
+    doc.text(CONFIG.mapsUrl, RTL ? PW - M : rx, btnY + btnH + 5, startAlign());
     doc.link(rx, btnY + btnH + 1.5, rw, 5, { url: CONFIG.mapsUrl });
   }
 
   /* ---------- 3. THE PROJECT — act one title page ---------- */
   newDarkPage();
-  caps(doc, 'The project', M, 62, { size: 8, colour: GOLD, track: 2 });
-  doc.setFont(DISPLAY, 'normal').setFontSize(38);
+  caps(doc, S('proj.eyebrow', null, 'The project'), M, 62, { size: 8, colour: GOLD, track: 2 });
+  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(38);
   setText(doc, PAPER);
-  doc.text(latin(CONFIG.name), M, 80);
+  tStart(doc, NAME, M, 80);
   setFill(doc, GOLD);
-  doc.rect(M, 87, 30, 1, 'F');
+  doc.rect(RTL ? PW - M - 30 : M, 87, 30, 1, 'F');
 
-  stat(doc, 'Total built-up area', P.builtUpArea || '—', M, 102, 17, PAPER);
-  stat(doc, 'Mixed-use area', P.mixedUseArea || '—', M + 72, 102, 17, PAPER);
+  stat(doc, S('proj.builtUp', null, 'Total built-up area'), P.builtUpArea || '—', M, 102, 17, PAPER);
+  stat(doc, S('proj.mixedUse', null, 'Mixed-use area'), P.mixedUseArea || '—', M + 72, 102, 17, PAPER);
 
   /* Three columns of the client's own catalogue figures. The mix and the level
      areas are numbers the customer checks; the features and services are the
      client's own labels, verbatim — playbook rule 4, we do not write their
      marketing copy. */
-  const C1 = M, C2 = M + 92, C3 = M + 180;
+  /* THE COLUMNS THEMSELVES REVERSE in Arabic, so the first one is the first one
+     a reader meets. `column` mirrors a column's box across the page and returns
+     it in ordinary left-to-right coordinates; every run inside it is then
+     mirrored again within that box by tStart/listRow. Two mirrorings, and both
+     are needed: one puts the column on the correct side of the page, the other
+     puts the text against the correct edge of the column. */
+  const column = (x, w) => (RTL ? { x: PW - x - w, w } : { x, w });
+  const K1 = column(M, 76), K2 = column(M + 92, 80), K3 = column(M + 180, PW - M - M - 180);
+  const listIn = (k, r, y) => listRow(doc, D(k.kind, r.label), r.area, k.box.x, k.box.x + k.box.w, y,
+                                      { size: 7.8, colour: ON_NAVY_2, valueColour: PAPER });
+
   let cy = 126;
-  caps(doc, 'Use mix', C1, cy, { colour: GOLD });
+  caps(doc, S('proj.mix', null, 'Use mix'), K1.x, cy,
+       { colour: GOLD, x0: K1.x, x1: K1.x + K1.w });
   (P.mix || []).forEach((r, i) => {
-    listRow(doc, r.label, r.area, C1, C1 + 76, cy + 7 + i * 5.6,
-            { size: 7.8, colour: ON_NAVY_2, valueColour: PAPER });
+    listIn({ kind: 'mix', box: K1 }, r, cy + 7 + i * 5.6);
   });
   let c1y = cy + 7 + (P.mix || []).length * 5.6 + 6;
-  caps(doc, 'The building', C1, c1y, { colour: GOLD });
+  caps(doc, S('proj.building', null, 'The building'), K1.x, c1y,
+       { colour: GOLD, x0: K1.x, x1: K1.x + K1.w });
   (P.levels || []).forEach((r, i) => {
-    listRow(doc, r.label, r.area, C1, C1 + 76, c1y + 7 + i * 5.6,
-            { size: 7.8, colour: ON_NAVY_2, valueColour: PAPER });
+    listIn({ kind: 'levels', box: K1 }, r, c1y + 7 + i * 5.6);
   });
 
-  caps(doc, 'Features', C2, cy, { colour: GOLD });
-  doc.setFont(SANS, 'normal').setFontSize(7.8);
-  (P.features || []).forEach((f, i) => {
-    bullet(doc, C2 + 1, cy + 7 + i * 5.6);
-    setText(doc, ON_NAVY);
-    doc.text(latin(f), C2 + 4.5, cy + 7 + i * 5.6);
-  });
-
-  caps(doc, 'Services', C3, cy, { colour: GOLD });
-  doc.setFont(SANS, 'normal').setFontSize(7.8);
-  (P.services || []).forEach((f, i) => {
-    bullet(doc, C3 + 1, cy + 7 + i * 5.6);
-    setText(doc, ON_NAVY);
-    doc.text(latin(f), C3 + 4.5, cy + 7 + i * 5.6);
-  });
+  /* A bulleted list mirrors as a unit: the bullet leads the line, so it moves
+     to the other end and the text starts inboard of it. */
+  const bulletList = (k, items, kind, headingKey, headingEn) => {
+    caps(doc, S(headingKey, null, headingEn), k.x, cy, { colour: GOLD, x0: k.x, x1: k.x + k.w });
+    doc.setFont(SANS, 'normal').setFontSize(7.8);
+    (items || []).forEach((f, i) => {
+      const yy = cy + 7 + i * 5.6;
+      bullet(doc, k.x + 1, yy, GOLD, [k.x, k.x + k.w]);
+      setText(doc, ON_NAVY);
+      tStart(doc, D(kind, f), k.x + 4.5, yy, k.x, k.x + k.w);
+    });
+  };
+  bulletList(K2, P.features, 'features', 'proj.features', 'Features');
+  bulletList(K3, P.services, 'services', 'proj.services', 'Services');
 
   /* ---------- 4-5. the renders ---------- */
   const night = A.night;
@@ -835,10 +1037,10 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     setFill(doc, NAVY); doc.rect(0, 0, PW, PH, 'F');
     drawInBox(doc, hero, 0, 0, PW, PH);
     gradientScrim(doc, 0, PH - 62, PW, 62);
-    caps(doc, CONFIG.location, M, PH - 26, { size: 7.4, colour: GOLD, track: 1.6 });
-    titleFont(doc, CONFIG.name, 28);
+    caps(doc, PLACE, M, PH - 26, { size: 7.4, colour: GOLD, track: 1.6 });
+    titleFont(doc, NAME, 28);
     setText(doc, PAPER);
-    doc.text(latin(CONFIG.name), M, PH - 13);
+    tStart(doc, NAME, M, PH - 13);
     doc.setFont(SANS, 'normal').setFontSize(6.6);
     setText(doc, ON_NAVY_2);
     doc.text(String(page), PW - M, PH - 13, { align: 'right' });
@@ -847,7 +1049,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   /* The rest of the set, four up. */
   const grid = [day[0], night[1], day[1], night[2]].filter(Boolean);
   if (grid.length) {
-    newPage('The place', 'By day and by night');
+    newPage(S('page.place', null, 'The place'), S('page.placeSub', null, 'By day and by night'));
     const gap = 4;
     const gw = (PW - 2 * M - gap) / 2, gh = (176 - 26 - gap) / 2;
     grid.slice(0, 4).forEach((img, i) => {
@@ -858,13 +1060,14 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     });
     doc.setFont(SANS, 'normal').setFontSize(7);
     setText(doc, MUTED);
-    doc.text('Architectural visualisation. Finishes and landscaping are indicative.', M, 182);
+    tStart(doc, S('render.note', null,
+                  'Architectural visualisation. Finishes and landscaping are indicative.'), M, 182);
   }
 
   /* ---------- 6. clinics only ---------- */
   const clinic = A.clinic;
   if (clinic.length) {
-    newPage('The medical floor', unit.type);
+    newPage(S('page.medical', null, 'The medical floor'), D('type', unit.type));
     const cy2 = 26, ch = 148, gap = 4;
     /* clinic-2 is a portrait lift-lobby shot; giving it a third of the width
        keeps it from being cropped to a letterbox sliver. */
@@ -878,35 +1081,45 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     }
     doc.setFont(SANS, 'normal').setFontSize(7);
     setText(doc, MUTED);
-    doc.text('Architectural visualisation of the medical floor. Fit-out is indicative.', M, 182);
+    tStart(doc, S('render.clinicNote', null,
+                  'Architectural visualisation of the medical floor. Fit-out is indicative.'), M, 182);
   }
 
   /* ---------- 7. UNIT OFFER — act two title page ---------- */
   newDarkPage();
-  caps(doc, CONFIG.name, M, 62, { size: 8, colour: GOLD, track: 2 });
-  doc.setFont(DISPLAY, 'normal').setFontSize(44);
+  caps(doc, NAME, M, 62, { size: 8, colour: GOLD, track: 2 });
+  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(44);
   setText(doc, PAPER);
-  doc.text('Unit Offer', M, 84);
+  tStart(doc, S('offer.title', null, 'Unit Offer'), M, 84);
   setFill(doc, GOLD);
-  doc.rect(M, 91, 30, 1, 'F');
+  doc.rect(RTL ? PW - M - 30 : M, 91, 30, 1, 'F');
   /* The unit code is the one string on this page a customer will read back
      over the phone, so it is set in the sans — see titleFont. */
   doc.setFont(SANS, 'bold').setFontSize(22);
   setText(doc, GOLD);
-  doc.text(`Unit ${unit.code}`, M, 108);
+  tStart(doc, S('cover.unit', { code: unit.code }, `Unit ${unit.code}`), M, 108);
   doc.setFont(SANS, 'normal').setFontSize(10.5);
   setText(doc, ON_NAVY);
-  doc.text(latin(where), M, 117);
+  tStart(doc, where, M, 117);
 
-  stat(doc, 'Area', `${unit.area} m²`, M, 142, 15, PAPER);
-  stat(doc, 'Your price', money(unit.price), M + 62, 142, 15, GOLD);
-  stat(doc, 'Payment plan', summary.planLabel, M + 168, 142, 15, PAPER);
-  stat(doc, 'Prepared', today, M + 232, 142, 15, PAPER);
+  /* The four stats read in order across the page, so in Arabic they read in
+     order FROM THE RIGHT: each one is mirrored to the other side of the sheet by
+     column(), and its own label and figure are then mirrored again inside it.
+     A helper, because getting the two mirrorings out of step is the easy way to
+     land a label on one side of the page and its number on the other. */
+  const statAt = (label, value, x, w, size, colour) => {
+    const k = column(x, w);
+    stat(doc, label, value, k.x, 142, size, colour, [k.x, k.x + k.w]);
+  };
+  statAt(S('offer.area', null, 'Area'), area(unit.area), M, 60, 15, PAPER);
+  statAt(S('offer.yourPrice', null, 'Your price'), money(unit.price), M + 62, 104, 15, GOLD);
+  statAt(S('offer.plan', null, 'Payment plan'), D('plan', summary.planLabel), M + 168, 62, 15, PAPER);
+  statAt(S('offer.prepared', null, 'Prepared'), today, M + 232, PW - M - M - 232, 15, PAPER);
 
   /* ---------- 8. your building ---------- */
   const master = A.masterplan;
   if (master) {
-    newPage('Your building', bName);
+    newPage(S('page.building', null, 'Your building'), bName);
     const iy = 26, ih = 148;
     /* Contain, not cover. This is the page that answers "where is my unit?",
        so the masterplan has to be whole — a cover fit crops the top of the
@@ -954,9 +1167,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
     doc.setFont(SANS, 'normal').setFontSize(7.6);
     setText(doc, MUTED);
-    doc.text(latin(poly
-      ? `${bName} is highlighted. Your unit ${unit.code} is on the ${unit.floorName || unit.floorCode}.`
-      : `${bName}. Your unit ${unit.code} is on the ${unit.floorName || unit.floorCode}.`),
+    tStart(doc, poly
+      ? S('bld.highlighted', { building: bName, code: unit.code, floor: floorName },
+          `${bName} is highlighted. Your unit ${unit.code} is on the ${unit.floorName || unit.floorCode}.`)
+      : S('bld.plain', { building: bName, code: unit.code, floor: floorName },
+          `${bName}. Your unit ${unit.code} is on the ${unit.floorName || unit.floorCode}.`),
       M, 182);
   }
 
@@ -964,7 +1179,8 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   if (planDef && planDef.image) {
     const planImg = A.floor;
     if (planImg) {
-      newPage('Your floor', planDef.label || unit.floorName || unit.floorCode);
+      newPage(S('page.floor', null, 'Your floor'),
+              D('floor', planDef.label || unit.floorName || unit.floorCode));
       const iy = 26, ih = 148, iw = PW - 2 * M;
 
       /* Zoom to the customer's own building where the pins allow it, and show
@@ -1036,62 +1252,82 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
       doc.setFont(SANS, 'normal').setFontSize(7.6);
       setText(doc, MUTED);
-      doc.text(latin(pin
-        ? `${crop ? `${bName}, ` : ''}${planDef.label}. Unit ${unit.code} is marked on the drawing.`
-        : `Drawing of the ${planDef.label}. The exact position of ${unit.code} is confirmed on the stamped layout.`),
+      const planLabel = D('floor', planDef.label);
+      tStart(doc, pin
+        ? S('floor.pinned', { prefix: crop ? `${bName}، ` : '', plan: planLabel, code: unit.code },
+            `${crop ? `${bName}, ` : ''}${planDef.label}. Unit ${unit.code} is marked on the drawing.`)
+        : S('floor.unpinned', { plan: planLabel, code: unit.code },
+            `Drawing of the ${planDef.label}. The exact position of ${unit.code} is confirmed on the stamped layout.`),
         M, 182);
     }
   }
 
   /* ---------- 10. your unit ---------- */
-  newPage('Your unit', unit.code);
-  let y = sectionTitle(doc, `Unit ${unit.code}`, 36);
+  newPage(S('page.unit', null, 'Your unit'), unit.code);
+  let y = sectionTitle(doc, S('unit.title', { code: unit.code }, `Unit ${unit.code}`), 36);
 
-  stat(doc, 'Building', bName, M, y + 8);
-  stat(doc, 'Floor', unit.floorName || unit.floorCode, M + 52, y + 8);
-  stat(doc, 'Type', unit.type || '—', M + 104, y + 8);
+  /* Five stats in a row, mirrored as a block the same way the title page's are. */
+  const unitStat = (label, value, x) => {
+    const k = column(x, 50);
+    stat(doc, label, value, k.x, y + 8, 13, INK, [k.x, k.x + k.w]);
+  };
+  unitStat(S('unit.building', null, 'Building'), bName, M);
+  unitStat(S('unit.floor', null, 'Floor'), floorName, M + 52);
+  unitStat(S('unit.type', null, 'Type'), D('type', unit.type) || '—', M + 104);
   /* Gross area only — the client instructed 2026-08-12 that the sheet's net
      figure is never shown or printed. */
-  stat(doc, 'Area', `${unit.area} m²`, M + 156, y + 8);
-  if (unit.outdoor) stat(doc, 'Outdoor', `${unit.outdoor} m²`, M + 208, y + 8);
+  unitStat(S('unit.area', null, 'Area'), area(unit.area), M + 156);
+  if (unit.outdoor) unitStat(S('unit.outdoor', null, 'Outdoor'), area(unit.outdoor), M + 208);
 
   let py2 = y + 34;
   setDraw(doc, LINE); doc.setLineWidth(0.2);
   doc.line(M, py2, PW - M, py2);
   py2 += 22;
 
-  /* The price, as the one object on the page with any weight to it. */
-  const panelX = M + 150, panelW = PW - M - panelX, panelH = 46;
+  /* The price, as the one object on the page with any weight to it.
+     The PANEL keeps its position — layout stays — but the gold spine down its
+     edge marks where the text begins, so that moves with the text. */
+  const priceK = column(M + 150, PW - M - (M + 150));
+  const panelX = priceK.x, panelW = priceK.w, panelH = 46;
   setFill(doc, NAVY);
   doc.roundedRect(panelX, py2 - 14, panelW, panelH, 2, 2, 'F');
   setFill(doc, GOLD);
-  doc.rect(panelX, py2 - 14, 1.4, panelH, 'F');
-  caps(doc, unit.discount ? 'Your price' : 'Price', panelX + 10, py2, { size: 7, colour: GOLD, track: 0.9 });
+  doc.rect(RTL ? panelX + panelW - 1.4 : panelX, py2 - 14, 1.4, panelH, 'F');
+  caps(doc, unit.discount ? S('unit.yourPrice', null, 'Your price') : S('unit.price', null, 'Price'),
+       panelX + 10, py2, { size: 7, colour: GOLD, track: 0.9, x0: panelX, x1: panelX + panelW - 10 });
   doc.setFont(SANS, 'bold').setFontSize(23);
   setText(doc, PAPER);
-  doc.text(money(unit.price), panelX + 10, py2 + 15);
+  tStart(doc, money(unit.price), panelX + 10, py2 + 15, panelX, panelX + panelW - 10);
 
   if (unit.discount) {
-    stat(doc, 'List price', money(unit.total), M, py2, 14);
-    stat(doc, `Discount ${pctLabel(unit.discount)}`, `- ${money(unit.total - unit.price)}`, M + 72, py2, 14);
+    const listK = column(M, 70), discK = column(M + 72, 70);
+    stat(doc, S('unit.listPrice', null, 'List price'), money(unit.total),
+         listK.x, py2, 14, INK, [listK.x, listK.x + listK.w]);
+    stat(doc, S('unit.discount', { pct: pctLabel(unit.discount) }, `Discount ${pctLabel(unit.discount)}`),
+         `- ${money(unit.total - unit.price)}`, discK.x, py2, 14, INK, [discK.x, discK.x + discK.w]);
 
     py2 += 52;
     setFill(doc, [250, 246, 238]);
     doc.roundedRect(M, py2 - 8, PW - 2 * M, 24, 2, 2, 'F');
     setFill(doc, GOLD);
-    doc.rect(M, py2 - 8, 1.4, 24, 'F');
+    doc.rect(RTL ? PW - M - 1.4 : M, py2 - 8, 1.4, 24, 'F');
     doc.setFont(SANS, 'bold').setFontSize(13);
     setText(doc, [140, 100, 30]);
-    doc.text(latin(`You save ${money(unit.total - unit.price)}`), M + 8, py2 + 2);
+    tStart(doc, S('unit.save', { amount: money(unit.total - unit.price) },
+                  `You save ${money(unit.total - unit.price)}`), M + 8, py2 + 2, M + 8, PW - M - 8);
     doc.setFont(SANS, 'normal').setFontSize(7.8);
     setText(doc, MUTED);
-    doc.text(latin(`${pctLabel(unit.discount)} off the list price. The payment plan overleaf is calculated on your price.`),
-             M + 8, py2 + 9);
+    tStart(doc, S('unit.saveNote', { pct: pctLabel(unit.discount) },
+                  `${pctLabel(unit.discount)} off the list price. The payment plan overleaf is calculated on your price.`),
+           M + 8, py2 + 9, M + 8, PW - M - 8);
   }
 
   /* ---------- 11. payment plan ---------- */
-  newPage('Payment plan', `Unit ${unit.code} · ${summary.planLabel}`);
-  y = sectionTitle(doc, `${summary.planLabel} plan`, 31);
+  const planLabelTr = D('plan', summary.planLabel);
+  newPage(S('page.payment', null, 'Payment plan'),
+          S('pay.sub', { code: unit.code, label: planLabelTr },
+            `Unit ${unit.code} · ${summary.planLabel}`));
+  y = sectionTitle(doc, S('pay.title', { label: planLabelTr }, `${summary.planLabel} plan`), 31);
 
   /* The unit's own figures repeated here, so the schedule page can be read —
      or forwarded — without turning back. Kept to one line: the row height
@@ -1099,17 +1335,25 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
      comes straight out of the table. */
   doc.setFont(SANS, 'normal').setFontSize(7.6);
   setText(doc, MUTED);
-  doc.text(latin(`${where}  ·  ${unit.area} m²${unit.outdoor ? ` + ${unit.outdoor} m² outdoor` : ''}  ·  Price ${money(unit.price)}`),
-           M, y - 1);
+  const outdoorBit = unit.outdoor
+    ? S('pay.outdoor', { n: area(unit.outdoor) }, ` + ${unit.outdoor} m² outdoor`) : '';
+  tStart(doc, S('pay.line', { where, area: area(unit.area), outdoor: outdoorBit, price: money(unit.price) },
+                `${where}  ·  ${unit.area} m²${outdoorBit}  ·  Price ${money(unit.price)}`),
+         M, y - 1);
 
   const statY = y + 8;
-  stat(doc, 'Down payment', money(summary.downPayment), M, statY, 11);
-  stat(doc, 'Quarterly', money(summary.instalmentAmount), M + 52, statY, 11);
-  stat(doc, 'Instalments', String(summary.instalmentCount), M + 104, statY, 11);
-  stat(doc, `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`, money(summary.maintenance), M + 140, statY, 11);
-  stat(doc, 'Total payable', money(summary.totalPayable), M + 200, statY, 11);
-  stat(doc, 'Delivery', summary.deliveryDate.toLocaleDateString('en-GB',
-        { month: 'short', year: 'numeric' }), M + 252, statY, 11);
+  const payStat = (label, value, x, w) => {
+    const k = column(x, w);
+    stat(doc, label, value, k.x, statY, 11, INK, [k.x, k.x + k.w]);
+  };
+  payStat(S('pay.down', null, 'Down payment'), money(summary.downPayment), M, 50);
+  payStat(S('pay.quarterly', null, 'Quarterly'), money(summary.instalmentAmount), M + 52, 50);
+  payStat(S('pay.instalments', null, 'Instalments'), String(summary.instalmentCount), M + 104, 34);
+  payStat(S('pay.maintenance', { pct: pctLabel(CONFIG.maintenanceRate) },
+            `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`), money(summary.maintenance), M + 140, 58);
+  payStat(S('pay.total', null, 'Total payable'), money(summary.totalPayable), M + 200, 50);
+  payStat(S('pay.delivery', null, 'Delivery'), summary.deliveryDate.toLocaleDateString('en-GB',
+          { month: 'short', year: 'numeric' }), M + 252, PW - M - M - 252);
 
   /* One full-width table with the same shape as the schedule on screen —
      Due / Payment / Date / Amount / % of price, a band per year, milestone rows
@@ -1143,7 +1387,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
   const GAP = 9;
   const colW = twoCol ? (PW - 2 * M - GAP) / 2 : PW - 2 * M;
-  const colX = (c) => M + c * (colW + GAP);
+  /* THE FIRST COLUMN IS THE ONE THE READER MEETS FIRST, which in Arabic is the
+     one on the right. Without this the schedule started on the left with the
+     down payment and continued on the right with year 6 — the two halves in the
+     wrong order, which on a payment schedule is not a cosmetic problem. */
+  const colX = (c) => M + (RTL && twoCol ? 1 - c : c) * (colW + GAP);
 
   /* Split the two columns by HEIGHT, not by row count — year bands make rows
      unevenly costly, and splitting on count leaves one column short. */
@@ -1154,18 +1402,39 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   const splitAt = Math.min(TOP + HEAD_H + contentH / 2, BOTTOM);
 
   /* Column positions are fractions of the column, so the same code lays out the
-     full-width single column and the narrow paired ones. */
-  const cDue  = (c) => colX(c) + 1.5;
-  const cPay  = (c) => colX(c) + colW * 0.27;
-  const cDate = (c) => colX(c) + colW * 0.61;
-  const cAmt  = (c) => colX(c) + colW * 0.87;
-  const cPct  = (c) => colX(c) + colW - 1.5;
+     full-width single column and the narrow paired ones.
+     `cx` mirrors an anchor inside THIS table column, which is what reverses the
+     five fields: Due ends up on the right and % on the left, and the row still
+     reads Due, Payment, Date, Amount, % in the direction the page is read. */
+  const cx = (c, x) => ax(x, colX(c), colX(c) + colW);
+  const cDue  = (c) => cx(c, colX(c) + 1.5);
+  const cPay  = (c) => cx(c, colX(c) + colW * 0.27);
+  const cDate = (c) => cx(c, colX(c) + colW * 0.61);
+  const cAmt  = (c) => cx(c, colX(c) + colW * 0.87);
+  const cPct  = (c) => cx(c, colX(c) + colW - 1.5);
 
   /* "Instalment 12 of 32 (includes 10% milestone)" does not fit a half-width
-     column; the same fact in a third of the space. */
-  const shortLabel = (s) => latin(s)
-    .replace(/Instalment (\d+) of (\d+)/, 'Instalment $1/$2')
-    .replace(/\s*\(includes (\d+)% milestone\)/, ' +$1%');
+     column; the same fact in a third of the space. In Arabic the label already
+     comes from the structured key rather than the English sentence, so only the
+     English needs shortening — but the milestone still has to be compressed, and
+     tRowLabel gives it back in full. */
+  const shortLabel = (r) => {
+    if (!RTL) {
+      return latin(r.label)
+        .replace(/Instalment (\d+) of (\d+)/, 'Instalment $1/$2')
+        .replace(/\s*\(includes (\d+)% milestone\)/, ' +$1%');
+    }
+    /* The Arabic is built from the row's structured key rather than by
+       rewriting the English sentence — engine.js attaches one to every row for
+       exactly this. See the note beside labelKey in engine.js. */
+    const k = r.labelKey;
+    if (!k) return r.label;
+    if (k.kind === 'down') return pt('pay.down');
+    if (k.kind === 'maintenance') return pt('pay.maintenance', { pct: k.pct });
+    return k.milestone
+      ? pt('tbl.instMilestone', { i: k.i, n: k.n, pct: k.milestone })
+      : pt('tbl.inst', { i: k.i, n: k.n });
+  };
 
   const tableHead = (c, yy) => {
     setFill(doc, [244, 247, 250]);
@@ -1174,11 +1443,15 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
        not count character spacing when it measures a run for alignment. */
     doc.setFont(SANS, 'bold').setFontSize(5.8);
     setText(doc, MUTED);
-    doc.text('DUE', cDue(c), yy);
-    doc.text('PAYMENT', cPay(c), yy);
-    doc.text('DATE', cDate(c), yy);
-    doc.text('AMOUNT', cAmt(c), yy, { align: 'right' });
-    doc.text('%', cPct(c), yy, { align: 'right' });
+    const head = (key, en, at, ends) => {
+      const s = RTL ? pt(key) : en;
+      doc.text(TX(s), at, yy, ends ? endAlign() : startAlign());
+    };
+    head('tbl.due', 'DUE', cDue(c), false);
+    head('tbl.payment', 'PAYMENT', cPay(c), false);
+    head('tbl.date', 'DATE', cDate(c), false);
+    head('tbl.amount', 'AMOUNT', cAmt(c), true);
+    head('tbl.pct', '%', cPct(c), true);
     return yy + 6.5;
   };
 
@@ -1192,12 +1465,14 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   const nextColumn = (bandLabel) => {
     col += 1;
     ty = tableHead(col, TOP);
-    if (bandLabel) {
+    if (bandLabel != null) {
       setFill(doc, [250, 245, 236]);
       doc.rect(colX(col), ty - 3.8, colW, 5.4, 'F');
       doc.setFont(SANS, 'bold').setFontSize(6);
       setText(doc, [147, 110, 44]);
-      doc.text(bandLabel.toUpperCase() + ' (CONT.)', cDue(col), ty);
+      doc.text(TX(RTL ? pt('tbl.cont', { label: pBand(bandLabel) })
+                      : String(bandLabel).toUpperCase() + ' (CONT.)'),
+               cDue(col), ty, startAlign());
       ty += BAND_H + BAND_EXTRA;
     }
   };
@@ -1210,26 +1485,30 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     doc.rect(colX(col), ty - 3.8, colW, 5.4, 'F');
     doc.setFont(SANS, 'bold').setFontSize(6);
     setText(doc, [147, 110, 44]);
-    doc.text(String(block.label).toUpperCase(), cDue(col), ty);
+    doc.text(TX(RTL ? pBand(block.year) : String(block.label).toUpperCase()),
+             cDue(col), ty, startAlign());
     ty += BAND_H + BAND_EXTRA;
 
     for (const r of block.rows) {
-      if (twoCol && col === 0 && ty > splitAt) nextColumn(block.label);
+      if (twoCol && col === 0 && ty > splitAt) nextColumn(RTL ? block.year : block.label);
       if (r.milestone) {
         setFill(doc, [253, 250, 244]);
         doc.rect(colX(col), ty - 3.4, colW, ROW_H, 'F');
       }
       doc.setFont(SANS, r.milestone ? 'bold' : 'normal').setFontSize(6.2);
       setText(doc, INK);
-      doc.text(r.when, cDue(col), ty);
+      doc.text(TX(RTL ? pWhen(r.month) : r.when), cDue(col), ty, startAlign());
       setText(doc, r.milestone ? INK : MUTED);
-      doc.text(shortLabel(r.label), cPay(col), ty);
-      doc.text(fmtDate(r.date), cDate(col), ty);
+      doc.text(TX(shortLabel(r)), cPay(col), ty, startAlign());
+      /* Dates and figures are never translated and never reordered — they are
+         the numbers the customer checks against the contract. They still move
+         to the mirrored column, but they read left to right inside it. */
+      doc.text(fmtDate(r.date), cDate(col), ty, startAlign());
       setText(doc, INK);
-      doc.text(fmt(r.amount), cAmt(col), ty, { align: 'right' });
+      doc.text(fmt(r.amount), cAmt(col), ty, endAlign());
       setText(doc, MUTED);
       doc.setFont(SANS, 'normal');
-      doc.text(fmtPct(r.pct), cPct(col), ty, { align: 'right' });
+      doc.text(fmtPct(r.pct), cPct(col), ty, endAlign());
 
       setDraw(doc, LINE); doc.setLineWidth(0.12);
       doc.line(colX(col), ty + 1.3, colX(col) + colW, ty + 1.3);
@@ -1242,73 +1521,25 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   setFill(doc, NAVY);
   doc.rect(M, BOTTOM + 1, PW - 2 * M, 8, 'F');
   setFill(doc, GOLD);
-  doc.rect(M, BOTTOM + 1, 1.4, 8, 'F');
+  doc.rect(RTL ? PW - M - 1.4 : M, BOTTOM + 1, 1.4, 8, 'F');
   doc.setFont(SANS, 'bold').setFontSize(8.2);
   setText(doc, PAPER);
-  doc.text('Total payable', M + 5, BOTTOM + 6.4);
-  doc.text(money(summary.totalPayable), PW - M - 3, BOTTOM + 6.4, { align: 'right' });
+  tStart(doc, S('pay.total', null, 'Total payable'), M + 5, BOTTOM + 6.4, M + 5, PW - M - 3);
+  tEnd(doc, money(summary.totalPayable), PW - M - 3, BOTTOM + 6.4, M + 5, PW - M - 3);
 
-  /* ---------- 12. terms ---------- */
-  newPage('Terms', unit.code);
-  y = sectionTitle(doc, 'What this offer assumes', 34);
-  doc.setFont(SANS, 'normal').setFontSize(8.2);
-  setText(doc, MUTED);
-  const terms = (typeof ASSUMPTIONS !== 'undefined' ? ASSUMPTIONS : []).slice();
-  terms.forEach((t) => {
-    const lines = doc.splitTextToSize(latin(t), PW - 2 * M - 6);
-    bullet(doc, M + 1, y);
-    doc.setFont(SANS, 'normal').setFontSize(8.2);
-    setText(doc, MUTED);
-    doc.text(lines, M + 5, y);
-    y += lines.length * 4.4 + 2.8;
-  });
+  /* THE PAYMENT PLAN IS THE LAST PAGE, on the user's instruction 2026-08-15.
+     A terms page used to follow it, carrying the ASSUMPTIONS list, a generated-on
+     disclaimer and a closing credits card with two live links. It is gone.
 
-  y += 6;
-  caps(doc, 'Prices and availability', M, y, { colour: INK, size: 7.4 });
-  y += 6;
-  doc.setFont(SANS, 'normal').setFontSize(8.2);
-  setText(doc, MUTED);
-  doc.text(doc.splitTextToSize(latin(
-    `This offer was generated on ${today} from the live inventory. Prices, the per-unit discount and availability can change without notice, and the unit is only reserved once a reservation form is signed and the down payment is received.`),
-    PW - 2 * M), M, y);
-
-  /* A closing block, which also stops the last page reading as three-quarters
-     blank. Credits on the left, the two live links on the right — the offer
-     deep-links back to the app, so a customer who sits on it for a week can
-     re-open it and see today's price rather than a stale sheet of paper.
-     No contact strip: none has been supplied, and inventing a phone number
-     that goes out over the client's name is not on. */
-  const cardY = 146, cardH = 38;
-  setFill(doc, NAVY);
-  doc.rect(M, cardY, PW - 2 * M, cardH, 'F');
-  setFill(doc, GOLD);
-  doc.rect(M, cardY, 1.4, cardH, 'F');
-
-  caps(doc, CONFIG.name, M + 9, cardY + 12, { size: 7.6, colour: GOLD, track: 1.2 });
-  doc.setFont(SANS, 'normal').setFontSize(7.4);
-  setText(doc, ON_NAVY);
-  doc.text(latin(`Developed by ${CONFIG.developer}` +
-           (CONFIG.consultant ? ` · Architecture by ${CONFIG.consultant}` : '')), M + 9, cardY + 21);
-  if (CONFIG.partners && CONFIG.partners.length) {
-    setText(doc, ON_NAVY_2);
-    doc.text(latin(`In partnership with ${CONFIG.partners.join(' and ')}`), M + 9, cardY + 28);
-  }
-
-  const lx = PW - M - 96;
-  const linkRow = (label, url, ly) => {
-    if (!url) return ly;
-    doc.setFont(SANS, 'bold').setFontSize(7.6);
-    setText(doc, GOLD);
-    doc.text(label, lx, ly);
-    const w = doc.getTextWidth(label);
-    setDraw(doc, GOLD); doc.setLineWidth(0.2);
-    doc.line(lx, ly + 1.5, lx + w, ly + 1.5);
-    doc.link(lx - 2, ly - 4.5, w + 6, 7, { url });
-    return ly + 11;
-  };
-  let ly2 = linkRow('Open the location in Google Maps', CONFIG.mapsUrl, cardY + 14);
-  linkRow('View this offer online',
-          CONFIG.shareBaseUrl ? `${CONFIG.shareBaseUrl}#${unit.code}/${plan.id}` : null, ly2);
+     What was on it and where it went:
+       · "Indicative offer — subject to availability at the time of contract."
+         is in the footer of EVERY page, so the disclaimer itself survives.
+       · The ASSUMPTIONS list is still on screen in the app, in both languages.
+       · The two links did NOT survive — in particular "View this offer online",
+         which deep-linked back to the app so a customer sitting on the offer for
+         a week reopened it at today's price rather than a stale sheet of paper.
+         That is a real loss; offerShareText() still carries the link in the
+         WhatsApp message, which is the only place it now appears. */
 
   return { doc, filename: offerFilename(unit, planDef || { label: unit.floorName }) };
 }

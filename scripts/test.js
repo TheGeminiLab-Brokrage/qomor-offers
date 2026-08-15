@@ -313,12 +313,25 @@ function i18nCheck() {
   problems.forEach((p) => ok(false, `i18n: ${p}`));
 }
 
+/* The Arabic SHAPER, which is the other half of the same problem.
+ *
+ * check-i18n proves the strings exist; this proves they survive the journey
+ * onto the page. They are separate failures: jsPDF's own Arabic parser dropped
+ * three letters out of "بيانات الوحدة" without raising anything, so "the PDF
+ * generated without an error" is not evidence of anything here. */
+function arabicCheck() {
+  const r = require('./test-arabic.js');
+  ok(r.fail === 0, `arabic: shaping, ordering and no lost letters (${r.pass} checks)`);
+  r.failures.forEach((f) => ok(false, `arabic: ${f}`));
+}
+
 (async () => {
   if (process.argv.includes('--live')) {
     try { await live(); } catch (e) { ok(false, `live sheet: ${e.message}`); }
   }
   worked();
   i18nCheck();
+  arabicCheck();
 
   console.log('\n══ Assumptions still to be settled by a signed sample offer');
   G.ASSUMPTIONS.forEach((a) => console.log(`   • ${a}`));

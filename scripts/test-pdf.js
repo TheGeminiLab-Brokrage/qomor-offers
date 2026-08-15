@@ -76,12 +76,18 @@ g.Image = class {
 // already on `window` is exactly how it decides not to.
 g.jspdf = require(path.join(root, 'vendor/jspdf.umd.min.js'));
 g.QOMOR_FONTS = require(path.join(root, 'vendor/fonts.js'));
+g.QOMOR_FONTS_AR = require(path.join(root, 'vendor/fonts-ar.js'));
 
 const load = (...files) =>
   files.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')
        .replace(/typeof module !== 'undefined'/g, 'false');
 
-const scope = new Function(`${load('js/config.js', 'js/plan.js', 'js/sheet.js', 'js/engine.js', 'js/pdf.js')}
+/* js/arabic.js and js/pdf-ar.js are loaded into the same scope as pdf.js, which
+ * is how they are loaded in the browser too — pdf.js calls forPdf() and pt() as
+ * bare globals rather than importing them, because this codebase has no module
+ * system and adding one for two files is not the trade. */
+const scope = new Function(`${load('js/arabic.js', 'js/pdf-ar.js', 'js/config.js',
+                                   'js/plan.js', 'js/sheet.js', 'js/engine.js', 'js/pdf.js')}
   return { CONFIG, PLANS, MASSING, parseCSV, normalizeRows, buildOfferPDF, offerFilename };`)();
 
 (async () => {
@@ -103,14 +109,18 @@ const scope = new Function(`${load('js/config.js', 'js/plan.js', 'js/sheet.js', 
   if (!plan) throw new Error(`no plan "${wantPlan}"`);
   const floor = scope.PLANS[unit.floorCode] || { label: unit.floorName };
 
-  const { doc, filename } = await scope.buildOfferPDF(unit, plan, floor);
+  /* `ar` as a third argument writes the Arabic offer — the same switch the app
+     makes from the language the agent is reading. */
+  const language = (process.argv[4] || 'en').toLowerCase();
+  const { doc, filename } = await scope.buildOfferPDF(unit, plan, floor, new Date(), language);
   const outDir = path.join(root, 'raw');
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  const out = path.join(outDir, filename);
+  const out = path.join(outDir, language === 'ar' ? filename.replace(/\.pdf$/, ' AR.pdf') : filename);
   fs.writeFileSync(out, Buffer.from(doc.output('arraybuffer')));
 
   console.log(`unit     ${unit.code}  ${unit.type}  ${unit.floorName}  ${unit.area} m²`);
   console.log(`plan     ${plan.label}`);
+  console.log(`lang     ${language}`);
   console.log(`pages    ${doc.getNumberOfPages()}`);
   console.log(`wrote    ${path.relative(root, out)}  (${(fs.statSync(out).size / 1024).toFixed(0)} KB)`);
   if (warnings.length) console.log(`sheet    ${warnings.length} warnings`);

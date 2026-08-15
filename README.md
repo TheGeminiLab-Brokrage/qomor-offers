@@ -243,13 +243,24 @@ always knows which one they are in:
 | 9 | Your floor | Floor drawing, **cropped to the building**, unit pinned |
 | 10 | Your unit | Gross area and price |
 | 11 | Payment plan | The whole schedule, headed by the unit's own figures |
-| 12 | Terms | The assumptions above, verbatim, plus the live links |
 
-11 pages for retail and admin, 12 for a clinic. **The schedule fits one page on
-every one of the six plans** — verified by rendering all six. The row height is
-solved for the space left rather than picked: see the comment in `pdf.js`, and
-re-run all six plans after changing anything above the table, because a
-millimetre spent there comes straight out of the rows.
+10 pages for retail and admin, 11 for a clinic. **The schedule fits one page on
+every one of the six plans, in both languages** — verified by rendering all
+twelve. The row height is solved for the space left rather than picked: see the
+comment in `pdf.js`, and re-run all six plans after changing anything above the
+table, because a millimetre spent there comes straight out of the rows.
+
+**The payment plan is the last page**, on the user's instruction 2026-08-15. A
+terms page used to follow it. What it carried and where that went:
+
+- "Indicative offer — subject to availability at the time of contract." is in
+  the footer of **every** page, so the disclaimer itself survives.
+- The ASSUMPTIONS list is still on screen in the app, in both languages.
+- The two live links did **not** survive. In particular *View this offer online*
+  deep-linked back to the app, so a customer sitting on the offer for a week
+  reopened it at today's price rather than a stale sheet of paper. That is a
+  real loss; `offerShareText()` still carries the link in the WhatsApp message,
+  which is now the only place it appears.
 
 Two pages do real work rather than just showing a picture:
 
@@ -269,12 +280,15 @@ which are enormous (one is 8128×5120 / 66 MB). It resamples and re-encodes them
 to about 4 MB total, because these offers travel by WhatsApp. A finished offer
 is about 4.9 MB.
 
-### Arabic in the PDF — do not attempt with jsPDF as it stands
+### Arabic in the PDF — why jsPDF's own support cannot be used
 
-The client asked for an Arabic offer on 2026-08-14. **jsPDF's Arabic support
-silently drops letters**, which is worse than having none on a document that
-quotes a price. Measured, not assumed — text extracted back out of a generated
-PDF with `pdftotext`:
+**Solved 2026-08-15 — see *The Arabic PDF* below for how it works now.** This is
+the evidence that forced the approach, kept because it is the reason not to
+reach for jsPDF's built-in Arabic the next time.
+
+**jsPDF's Arabic support silently drops letters**, which is worse than having
+none on a document that quotes a price. Measured, not assumed — text extracted
+back out of a generated PDF with `pdftotext`:
 
 | Input | jsPDF wrote |
 |---|---|
@@ -282,20 +296,21 @@ PDF with `pdftotext`:
 | `خطة السداد` | `ﺧﻄﺔ ﻟﺴﺪ` |
 | `مشاركة العرض على واتساب` | `ﻣﺸﺎﻛﺔ ﻟﻌﺮ ﻋﻠ ﺗﺴﺎ` |
 
-Every sample lost characters, with no error raised. What was established:
+Every sample lost characters, with no error raised.
 
-- jsPDF hooks `postProcessText` with both an Arabic shaper and a bidi engine.
-  Its shaping is what loses the letters; its ordering is fine.
-- **Pre-shaping does not help** — jsPDF re-processes the already-shaped text and
-  mangles it again.
-- Pre-shaping *and* pre-reversing yields complete letters but reversed output,
-  because jsPDF then reverses a second time.
-- So the route is: disable jsPDF's own hook, and do shaping and ordering
-  ourselves. That hook lives in the minified bundle's internals, shared with the
-  hex-encoding path, so it needs care and a test asserting the Arabic
-  letter-for-letter on every offer — not a quick patch.
+**One conclusion recorded here on 2026-08-14 turned out to be wrong**, and it
+matters because it was the thing making the job look big. It said pre-shaping
+does not help, because jsPDF re-processes the already-shaped text — and so the
+only route was to disable its `postProcessText` hook inside the minified bundle.
+That is not what happens. **jsPDF's parser only touches the base Arabic block,
+U+0600–U+06FF. Text already shaped into Presentation Forms-B, U+FE70–U+FEFF,
+passes through completely untouched.** So no hook has to be disabled and no
+vendored file is patched: shape into the presentation forms, order the run, hand
+it over. Verified by extracting the finished PDF and comparing codepoint for
+codepoint against what `forPdf()` produced — they match exactly.
 
-The app was translated first for exactly this reason. See Arabic above.
+The lesson worth keeping is the smaller one: *pre-shaping into the base block
+does not help; pre-shaping into the presentation forms does.*
 
 Traps worth keeping:
 
@@ -489,8 +504,92 @@ spreadsheet rows and unit codes, they are read by the agent rather than the
 customer, and `[lang="ar"] .warnings li` sets them LTR so the bidi algorithm
 stops moving each trailing full stop to the front of the line.
 
-**The PDF is still English.** See the Arabic note under PDF offer — jsPDF drops
-letters — and that is why the app was done first.
+### The Arabic PDF
+
+**The offer is written in the language the agent is reading**, from 2026-08-15.
+No separate button: switch the app to AR and the exported PDF is Arabic.
+
+This needed real work, because **a PDF has no text engine**. The browser joins
+Arabic letters and lays them out right-to-left for us; jsPDF writes glyphs left
+to right at the positions it is given, looks each character up in the font's
+`cmap`, and does nothing else — no OpenType shaping, no bidirectional algorithm.
+jsPDF *does* ship its own Arabic parser and it is worse than useless: it
+**silently drops letters**. `بيانات الوحدة` came out `ﺑﻴﺎﻧﺎ ﻟﻮﺣﺪ`, three letters
+short, no error anywhere. That is the failure mode that matters — a document
+that looks plausible to someone who does not read Arabic and is wrong in front
+of the customer. Its parser is bypassed; `js/arabic.js` does the work.
+
+**Two steps, and the order is not negotiable — shape first, reorder second.**
+Shaping reads each letter's neighbours, and after reordering the neighbours are
+wrong.
+
+1. **Shape.** Arabic letters change form by position (ب is ﺑ ﺒ ﺐ ﺏ). Unicode's
+   Arabic Presentation Forms-B block, U+FE70–U+FEFF, has a codepoint for each —
+   a deprecated compatibility block that exists for exactly this situation. We
+   pick the form from the neighbours and emit those codepoints.
+2. **Order.** A cut-down Unicode Bidirectional Algorithm with the paragraph
+   direction fixed to RTL: two levels, one for Arabic and one for a run of Latin
+   or digits inside it.
+
+**This is why the font choice was forced rather than aesthetic.** Most modern
+Arabic fonts do *not* map the presentation forms — they carry one glyph per
+letter and join with OpenType rules jsPDF will not run. Measured coverage of the
+144 Presentation Forms-B codepoints:
+
+| Font | Coverage | Verdict |
+|---|---|---|
+| Noto Naskh Arabic | 141 / 144 | usable |
+| **Amiri** | **140 / 144** | **used** — also carries full ASCII |
+| Cairo | 89 / 144 | would silently drop glyphs |
+| Noto Kufi Arabic | 10 / 144 | unusable |
+
+Amiri also has ASCII, so a mixed `الدور Sky Plaza` needs one font rather than
+two — jsPDF cannot switch font mid-string. An Arabic offer is therefore set
+**entirely** in Amiri, which also removes the Marcellus digit trap. It ships as
+a **separate** `vendor/fonts-ar.js` (376 KB) fetched only for an Arabic export,
+so an English one pays nothing.
+
+Three traps worth knowing, each found by looking at the output:
+
+- **Gaps between letters are usually correct.** `المشروع` legitimately breaks
+  after ا, ر and و, because those letters do not join forward. Do not "fix" it.
+- **A bracket pair must resolve to one direction level.** `المدة 20 (10%)`
+  printed with *two opening brackets*: the opening one had a digit either side
+  and was absorbed into the Latin run, its partner was not, and only one of the
+  two got mirrored. Brackets are now pinned to the paragraph level.
+- **Arabic is never letterspaced.** The tracked-out caps that carry the whole
+  label style in Latin pull a joined script apart. `caps()` skips the tracking
+  in Arabic — which also makes the run measurable, so it can finally be
+  right-aligned.
+
+**Layout: the text flips, the layout stays** (the user's ruling). Text
+right-aligns, table columns reverse, the two-column schedule starts on the
+*right*. Photographs, panels and the cover keep their positions. So mirroring is
+done **per container** — `ax(x, x0, x1)` — never per page: mirror the page and a
+caption ends up on the far side of the sheet from the panel it captions. Where
+one end of a pair is pinned, the other must be too; the header subtitle is
+fixed right in both languages because the wordmark opposite it never moves.
+
+**Marketing copy is the client's own Arabic**, read off their catalogue
+(`cataloue qomor arabic partneres final.pdf`), not translated back from the
+English in `config.js` — playbook rule 4. `js/pdf-ar.js` cites the slide each
+block came from. Two deliberate divergences from their slides are documented
+there: their ten services against CONFIG's eight, and their Arabic-Indic digits
+against this document's Western ones.
+
+`scripts/test-arabic.js` holds it all to the output, and runs inside
+`scripts/test.js`. Two kinds of assertion, because either alone would have
+passed the bug that started this: **exact** expected glyph sequences for every
+joining behaviour, hand-checked against the Unicode chart, and a pass over every
+Arabic string the app can print asserting `unshape(shape(s)) === s` — which is
+what catches a dropped letter — plus a multiset check that reordering loses
+nothing. There is deliberately **no** inverse of `visualOrder()`: reordering
+discards the logical neighbours it was resolved from, so an inverse would have
+to guess, and a test whose oracle guesses is worse than no test.
+
+**Still English on the Arabic offer**, on purpose: unit codes, dates, all
+figures and the Maps URL. They have to match the contract the customer signs and
+the address bar they type.
 
 ## Performance — where the time actually goes
 

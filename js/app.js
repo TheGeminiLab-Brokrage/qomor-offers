@@ -651,7 +651,15 @@ $('btnOffer').onclick = async () => {
    picked a building, a floor and a unit it will long since be cached, so the
    first offer is as instant as it was when it blocked startup. */
 (() => {
-  const warm = () => loadJsPDF().catch(() => {});   // silent: it retries on demand
+  /* The Arabic face is warmed with it, but ONLY when the agent is reading
+     Arabic — it is 376 KB that an English offer never draws a glyph from, and
+     the whole point of warming is to spend idle bandwidth on what will actually
+     be used. Switching language mid-session leaves it to be fetched on export,
+     which costs a moment once rather than a download nobody needed. */
+  const warm = () => {
+    loadJsPDF().catch(() => {});                    // silent: it retries on demand
+    if (lang() === 'ar') loadArabicFonts().catch(() => {});
+  };
   if ('requestIdleCallback' in window) requestIdleCallback(warm, { timeout: 8000 });
   else setTimeout(warm, 4000);
 })();

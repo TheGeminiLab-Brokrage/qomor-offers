@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v7';
+const CACHE = 'qomor-offers-v8';
 
 /* Code is revalidated; artwork is not.
  *
@@ -33,16 +33,20 @@ const SHELL = [
   'index.html',
   'css/styles.css',
   'js/i18n.js',
+  'js/arabic.js',
+  'js/pdf-ar.js',
   'js/config.js',
   'js/plan.js',
   'js/sheet.js',
   'js/engine.js',
   'js/pdf.js',
   'js/app.js',
-  /* jsPDF is NOT precached, and neither are the embedded brand fonts. At 410 KB
-   * and 291 KB they competed for bandwidth with the very first paint on a
-   * phone, which is the moment that matters most; both are fetched and cached
-   * on first use instead, and app.js warms them when idle. */
+  /* jsPDF is NOT precached, and neither are the embedded fonts. At 410 KB,
+   * 291 KB and — for Arabic — a further 376 KB they competed for bandwidth with
+   * the very first paint on a phone, which is the moment that matters most; all
+   * are fetched and cached on first use instead, and app.js warms them when
+   * idle. js/arabic.js and js/pdf-ar.js above ARE precached: together they are
+   * a few KB, and they are needed to draw a single Arabic label. */
   'site.webmanifest',
   'assets/logo.png',
   'assets/icons/icon-192.png',

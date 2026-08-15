@@ -195,6 +195,11 @@
      the tests assert on it), and everything drawn on screen is translated at
      render time on top of it. See the header comment in js/i18n.js. -->
 <script src="js/i18n.js"></script>
+<!-- Arabic for the PDF, and the shaper that makes it drawable. Both are small
+     and both are needed before the first export; the 376 KB Arabic FONT is the
+     part that loads lazily, and only for an Arabic offer. -->
+<script src="js/arabic.js"></script>
+<script src="js/pdf-ar.js"></script>
 <script src="js/config.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/sheet.js"></script>
