@@ -29,11 +29,17 @@ const NAVY      = [11, 27, 43];
 const NAVY_SOFT = [20, 44, 64];
 const GOLD      = [191, 157, 109];
 const INK       = [23, 32, 41];
-const MUTED     = [104, 118, 130];
+/* The two quiet greys were both a shade too quiet to survive a phone screen —
+ * the client's words were "specially what is written in light grey". Measured
+ * against their own grounds they were 4.67:1 and 4.83:1, which clears WCAG AA
+ * for normal text by a hair and then spends that margin on 6.6 pt labels read
+ * at arm's length in daylight. Darkened to 7.3:1 and 7.1:1, comfortably AAA,
+ * while staying clearly a step below INK and ON_NAVY so the hierarchy holds. */
+const MUTED     = [72, 86, 98];
 const LINE      = [218, 226, 233];
 const PAPER     = [255, 255, 255];
 const ON_NAVY   = [198, 210, 222];        // body text on a navy field
-const ON_NAVY_2 = [118, 137, 156];        // and its quieter second rank
+const ON_NAVY_2 = [152, 170, 188];        // and its quieter second rank
 
 /**
  * The brand typefaces — set by registerFonts() once the document exists.
@@ -328,6 +334,41 @@ function disarmJsPdfArabic(doc) {
     text(str, x, y, { ...(options || {}), isInputVisual: true, isOutputVisual: true }, ...rest);
 
   return () => { if (parser && original) parser.processArabic = original; };
+}
+
+/**
+ * Grow the document's small type, once, for every call site at once.
+ *
+ * The client's report on 2026-08-16 was that the offer "requires to zoom in to
+ * see it, specially what is written in light grey". They are right: the body
+ * and label sizes here run 5.8–8.4 pt, which is fine on a laptop at 100% and
+ * genuinely unreadable on the phone the offer is actually opened on.
+ *
+ * The sizes are set at ~30 call sites, so this scales them centrally instead —
+ * missing one would leave a single paragraph at the old size, which reads as a
+ * mistake rather than as a smaller style. Wrapping setFontSize also keeps
+ * MEASUREMENT honest: getTextWidth() and the align maths both read the active
+ * size, so they grow with the text and alignment stays put.
+ *
+ * It is a taper, NOT a flat multiplier. The display sizes (19–44 pt) are
+ * already large and scaling them would only push the titles into the artwork;
+ * the whole problem is at the bottom of the scale, so that is where the gain
+ * goes. 6.6 pt becomes 8.1, 5.8 becomes 7.1, and anything from 12 pt up is left
+ * exactly as drawn.
+ *
+ * The payment table absorbs this because it solves its own row height (see
+ * rowHeightFor) rather than assuming one, so the rows open up to suit.
+ */
+function readableSize(pt) {
+  if (pt >= 12) return pt;                       // display type — already big
+  if (pt <= 8) return pt * 1.22;
+  return pt * (1.22 - 0.22 * ((pt - 8) / 4));    // taper 8 pt -> 12 pt
+}
+
+function enlargeType(doc) {
+  const set = doc.setFontSize.bind(doc);
+  doc.setFontSize = (pt) => set(readableSize(pt));
+  return doc;
 }
 
 /**
@@ -914,6 +955,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc);
+  enlargeType(doc);
   const rearmJsPdfArabic = RTL ? disarmJsPdfArabic(doc) : null;
 
   const { rows, summary } = buildSchedule(unit, plan, contractDate);
