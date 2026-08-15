@@ -1738,10 +1738,41 @@ async function deliverOffer(unit, plan, floor, contractDate = new Date()) {
   return { how: 'downloaded', fellBackToEnglish };
 }
 
-/** Whether this browser can put a PDF into the system share sheet. */
+/**
+ * Whether this browser can put a PDF into the system share sheet.
+ *
+ * `navigator.canShare({files})` is NOT sufficient on its own, and trusting it
+ * alone is what stranded the offer button on "Preparing…" forever. Chrome on
+ * desktop Windows answers TRUE, then `navigator.share()` opens an OS flyout
+ * that, on a machine where that flyout does not come up, **never settles** —
+ * it neither resolves nor rejects. `await` on it hangs, so the `finally` that
+ * re-enables the button never runs and the agent is left with a dead control
+ * and no error. Measured 2026-08-16: buildOfferPDF finished in 4.1 s, share was
+ * called 75 ms later, and nothing happened after that.
+ *
+ * So ask the question that was actually meant — *is this a handheld?* — because
+ * the desktop branch is the one that works there: download the file and open
+ * WhatsApp Web beside it. `maxTouchPoints` cannot answer it (a touchscreen
+ * laptop reports 10) and neither can the primary pointer alone. `userAgentData`
+ * is definitive where it exists, and `(pointer: coarse)` covers the iPhone and
+ * iPad, which have no `userAgentData`.
+ */
+function isHandheld() {
+  try {
+    if (typeof navigator === 'undefined') return false;
+    if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
+      return navigator.userAgentData.mobile;
+    }
+    return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
+}
+
 function canShareFiles() {
   try {
-    return typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
+    return isHandheld()
+      && typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
       && navigator.canShare({ files: [new File([new Blob()], 'probe.pdf', { type: 'application/pdf' })] });
   } catch {
     return false;
