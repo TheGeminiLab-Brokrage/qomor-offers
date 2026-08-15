@@ -237,6 +237,13 @@ function registerFonts(doc) {
    * it perfectly well, and one Naskh serif throughout reads as a considered
    * document rather than as two documents spliced together.
    *
+   * Amiri was briefly swapped out for Noto Naskh Arabic on 2026-08-15, on the
+   * theory that its joined forms needed cursive attachment a PDF never applies.
+   * That theory was wrong — the letters were being separated by jsPDF reversing
+   * the run, see disarmJsPdfArabic() — and the swap cost more than it looked:
+   * the Noto subset carried no Latin, no % and no ², so unit codes and every
+   * percentage silently vanished from the Arabic offer. Amiri stays.
+   *
    * It also quietly removes the Marcellus digit trap — see titleFont(). */
   if (RTL && fonts.Amiri) {
     DISPLAY = 'Amiri';
@@ -267,6 +274,60 @@ function TX(s) {
   const str = String(s == null ? '' : s);
   if (!RTL) return latin(str);
   return typeof forPdf === 'function' ? forPdf(str) : str;
+}
+
+/**
+ * Stop jsPDF re-processing Arabic that js/arabic.js has already finished.
+ *
+ * TX() hands over text that is fully shaped AND already in drawing order. jsPDF
+ * assumes neither, and runs two passes of its own over every string. Both are
+ * correct for raw logical Arabic and both are destructive here:
+ *
+ *   preProcessText  -> processArabic(). Re-runs the joining pass. On reordered
+ *     text its neighbour test reads the wrong way round, so a lam that merely
+ *     ENDS UP beside an alef gets fused into the lam-alef ligature U+FEFB. In
+ *     "إجمالي" the letters are alef-then-lam; reversed for drawing they sit
+ *     lam-then-alef, and the word silently loses a letter.
+ *
+ *   postProcessText -> the bidi engine, which defaults to isInputVisual only.
+ *     It reverses the run a SECOND time, undoing visualOrder() and putting the
+ *     glyphs back in logical order. Every joining form then faces its neighbour
+ *     the wrong way, and the letters are drawn side by side without touching.
+ *     That is the whole of "the letters are separated not connected"; it was
+ *     never the typeface. Amiri was blamed and replaced for this — see
+ *     scripts/make-fonts.js.
+ *
+ * The bidi pass is disarmed per call, by declaring the output visual as well as
+ * the input, which makes doBidiReorder an identity. processArabic cannot be
+ * disarmed that way: the event holds a direct reference to the function, so
+ * reassigning jsPDF.API.__arabicParser__.processArabic does not reach it and it
+ * has to be unsubscribed from this document.
+ *
+ * Wrapping doc.text() rather than editing the call sites is deliberate. There
+ * are roughly twenty of them and a missed one is not a visibly wrong option, it
+ * is one line of unreadable Arabic in an offer that is otherwise perfect.
+ */
+function disarmJsPdfArabic(doc) {
+  const events = doc.internal && doc.internal.events;
+  if (events && typeof events.getTopics === 'function') {
+    const topics = events.getTopics() || {};
+    for (const token of Object.keys(topics.preProcessText || {})) events.unsubscribe(token);
+  }
+
+  /* Measurement reads the parser through the object, not through the captured
+     reference, so this one CAN be reassigned — and must be, or getTextWidth()
+     measures the ligature it no longer draws and right-aligned runs sit off by
+     a glyph. Restored when the document is done with. */
+  const parser = window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API
+               && window.jspdf.jsPDF.API.__arabicParser__;
+  const original = parser && parser.processArabic;
+  if (parser) parser.processArabic = (a) => (typeof a === 'string' ? a : (a && a.text));
+
+  const text = doc.text.bind(doc);
+  doc.text = (str, x, y, options, ...rest) =>
+    text(str, x, y, { ...(options || {}), isInputVisual: true, isOutputVisual: true }, ...rest);
+
+  return () => { if (parser && original) parser.processArabic = original; };
 }
 
 /**
@@ -591,9 +652,12 @@ function footer(doc, unit, page, dark) {
   doc.text(TX(RTL ? pt('foot.indicative')
                   : 'Indicative offer — subject to availability at the time of contract.'),
            PW / 2, PH - 7.5, { align: 'center' });
-  /* The page number is a figure, and figures sit at the outer edge in both
-     directions — mirroring it would put it under the document's own name. */
-  doc.text(String(page), PW - M, PH - 7.5, { align: 'right' });
+  /* The page number sits at the edge OPPOSITE the project line, which is the
+     whole point of putting it at an edge: pinning it to PW - M in both
+     directions printed it on top of the document's own name in Arabic, where
+     tStart() has already mirrored that name to the same corner. Digits are not
+     mirrored themselves — ax() moves the anchor, TX() is not wanted here. */
+  doc.text(String(page), ax(PW - M), PH - 7.5, endAlign());
 }
 
 function sectionTitle(doc, text, y) {
@@ -850,6 +914,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc);
+  const rearmJsPdfArabic = RTL ? disarmJsPdfArabic(doc) : null;
 
   const { rows, summary } = buildSchedule(unit, plan, contractDate);
   /* Dates stay en-GB in both languages — the client's standing instruction is
@@ -1093,7 +1158,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
     tStart(doc, NAME, M, PH - 13);
     doc.setFont(SANS, 'normal').setFontSize(6.6);
     setText(doc, ON_NAVY_2);
-    doc.text(String(page), PW - M, PH - 13, { align: 'right' });
+    doc.text(String(page), ax(PW - M), PH - 13, endAlign());
   }
 
   /* The rest of the set, four up. */
@@ -1590,6 +1655,12 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
          a week reopened it at today's price rather than a stale sheet of paper.
          That is a real loss; offerShareText() still carries the link in the
          WhatsApp message, which is the only place it now appears. */
+
+  /* __arabicParser__ hangs off the shared jsPDF.API, so put it back before the
+     next export — an English offer has no use for a disarmed Arabic parser, but
+     leaving a global monkey-patched past the call that needed it is how the next
+     bug gets written. */
+  if (rearmJsPdfArabic) rearmJsPdfArabic();
 
   return {
     doc,

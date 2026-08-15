@@ -298,19 +298,49 @@ back out of a generated PDF with `pdftotext`:
 
 Every sample lost characters, with no error raised.
 
-**One conclusion recorded here on 2026-08-14 turned out to be wrong**, and it
-matters because it was the thing making the job look big. It said pre-shaping
-does not help, because jsPDF re-processes the already-shaped text — and so the
-only route was to disable its `postProcessText` hook inside the minified bundle.
-That is not what happens. **jsPDF's parser only touches the base Arabic block,
-U+0600–U+06FF. Text already shaped into Presentation Forms-B, U+FE70–U+FEFF,
-passes through completely untouched.** So no hook has to be disabled and no
-vendored file is patched: shape into the presentation forms, order the run, hand
-it over. Verified by extracting the finished PDF and comparing codepoint for
-codepoint against what `forPdf()` produced — they match exactly.
+**jsPDF re-processes already-shaped text, and it has to be stopped from doing
+so.** A note here on 2026-08-15 claimed the opposite — that its parser only
+touches the base Arabic block U+0600–U+06FF and that Presentation Forms-B passes
+through untouched, so nothing needed disabling. That was wrong, it shipped, and
+it cost a wrongly-blamed typeface and most of a session. jsPDF runs **two**
+passes over every string:
 
-The lesson worth keeping is the smaller one: *pre-shaping into the base block
-does not help; pre-shaping into the presentation forms does.*
+| hook | what it does to already-shaped, already-ordered text |
+|---|---|
+| `preProcessText` → `processArabic()` | re-runs the joining pass, and fuses a lam that merely *ends up* beside an alef into the ligature U+FEFB — a letter disappears |
+| `postProcessText` → the bidi engine | reverses the run a **second** time, undoing `visualOrder()` and putting the glyphs back in logical order |
+
+The second one is the whole of the bug the client reported as *"the letters are
+separated not connected"*. Reversed back into logical order, every joining form
+faces away from its neighbour, so the letters are drawn side by side without
+touching — and the words also read backwards, which nobody without Arabic will
+spot. It is **not** a font problem. Amiri was blamed for it and swapped for Noto
+Naskh Arabic on that theory; the swap fixed nothing and lost every Latin glyph,
+`%` and `²` from the Arabic offer, because that subset carried digits only.
+
+Both passes are disarmed in `disarmJsPdfArabic()` in `js/pdf.js`: the bidi pass
+per call by declaring `isOutputVisual` as well as `isInputVisual`, which makes
+`doBidiReorder` an identity; `processArabic` by unsubscribing it from the
+document, because the event holds a direct reference to the function and
+reassigning `jsPDF.API.__arabicParser__.processArabic` does not reach it. Still
+no vendored file is patched.
+
+**The verification method is the real lesson here.** The wrong conclusion was
+"verified" by extracting the finished PDF with `pdftotext` and comparing
+codepoints against `forPdf()` — they matched exactly, and the PDF was unreadable.
+`pdftotext` reads the **ToUnicode CMap**, which records what each glyph *means*,
+not the order the glyphs are *drawn* in. It cannot see a reversed run at all. The
+check that works reads the glyph ids straight out of the content stream:
+
+```
+<0070002d00860073007c> Tj    # CIDs, in drawing order, first = leftmost
+```
+
+`scripts/test-arabic.js` now asserts exactly that, against the PDF bytes.
+
+Two lessons worth keeping: *pre-shaping into the base block does not help;
+pre-shaping into the presentation forms does* — and *never judge Arabic from
+extracted text or from a browser. Judge it from a rendered page.*
 
 Traps worth keeping:
 
@@ -548,6 +578,15 @@ two — jsPDF cannot switch font mid-string. An Arabic offer is therefore set
 **entirely** in Amiri, which also removes the Marcellus digit trap. It ships as
 a **separate** `vendor/fonts-ar.js` (376 KB) fetched only for an Arabic export,
 so an English one pays nothing.
+
+**That table measures the ORIGINAL fonts, and coverage is only half the test —
+the SUBSET has to keep the Latin too.** Noto Naskh reads as the better row and
+was briefly swapped in on 2026-08-15, but the subset cut for it carried the
+Arabic and the digits and nothing else: no letters, no `%`, no `²`, no hyphen.
+`QSE-050` and `18.72 m²` vanished from the page and every percentage in the
+payment plan printed as a bare number, silently, exactly the failure the coverage
+table exists to prevent. `scripts/test-arabic.js` now asserts the shipped subset
+can draw `%`, `²`, a Latin capital and a hyphen.
 
 Three traps worth knowing, each found by looking at the output:
 

@@ -207,6 +207,139 @@ for (const s of ['Unit QSE-050', '1,404,000 EGP', '15 Aug 2026', 'Sky Plaza', ''
   eq(A.forPdf(s), s, `English passes through forPdf untouched: "${s}"`);
 }
 
+/* --------------------------------------------------- and what jsPDF does to it */
+
+/* EVERY TEST ABOVE PASSED WHILE THE SHIPPED PDF WAS UNREADABLE, and that is why
+ * this section exists. They all stop at forPdf()'s return value. jsPDF then ran
+ * two passes of its own over that string and undid it:
+ *
+ *   preProcessText  -> processArabic() re-joined text that was already joined,
+ *      and fused a lam that merely ended up beside an alef into U+FEFB.
+ *   postProcessText -> the bidi engine reversed the run a SECOND time, putting
+ *      the glyphs back in logical order so every joining form faced away from
+ *      its neighbour. That is the whole of "letters are separated not
+ *      connected", which was misread as a fault in Amiri and cost a font swap.
+ *
+ * So this asserts against the PDF BYTES rather than any function's return
+ * value: build a one-line document, pull the glyph ids back out of the content
+ * stream, and require exactly the glyphs forPdf() asked for, in that order.
+ * Nothing jsPDF does to text can hide from that. See disarmJsPdfArabic().
+ */
+{
+  const fs = require('fs');
+  const g = globalThis;
+  g.window = g;
+  g.navigator = { userAgent: 'node', appVersion: '5.0' };
+  g.document = {
+    createElementNS: () => ({ setAttribute() {}, appendChild() {}, style: {} }),
+    createElement: () => ({ style: {}, getContext: () => null, setAttribute() {} }),
+    documentElement: { style: {} },
+  };
+  const mod = require(path.join(root, 'vendor/jspdf.umd.min.js'));
+  const jsPDF = (g.jspdf && g.jspdf.jsPDF) || mod.jsPDF || mod;
+  const FONTS = require(path.join(root, 'vendor/fonts-ar.js'));
+
+  /* Read the cmap of the shipped subset, so "which glyph did forPdf() ask for"
+     comes from the font rather than from an assumption. */
+  const buf = fs.readFileSync(path.join(root, 'assets/fonts/Amiri-Regular.ttf'));
+  const tbl = {};
+  for (let i = 0, n = buf.readUInt16BE(4); i < n; i++) {
+    const o = 12 + i * 16;
+    tbl[buf.toString('ascii', o, o + 4)] = buf.readUInt32BE(o + 8);
+  }
+  let sub = 0, subFmt = -1;
+  for (let i = 0, n = buf.readUInt16BE(tbl.cmap + 2); i < n; i++) {
+    const off = buf.readUInt32BE(tbl.cmap + 4 + i * 8 + 4);
+    const fmt = buf.readUInt16BE(tbl.cmap + off);
+    if (fmt === 12 || (fmt === 4 && subFmt !== 12)) { sub = tbl.cmap + off; subFmt = fmt; }
+  }
+  const gidFor = (cp) => {
+    if (subFmt === 12) {
+      for (let i = 0, n = buf.readUInt32BE(sub + 12); i < n; i++) {
+        const r = sub + 16 + i * 12;
+        const s = buf.readUInt32BE(r), e = buf.readUInt32BE(r + 4);
+        if (cp >= s && cp <= e) return buf.readUInt32BE(r + 8) + (cp - s);
+      }
+      return 0;
+    }
+    const segX2 = buf.readUInt16BE(sub + 6);
+    for (let i = 0; i < segX2 / 2; i++) {
+      if (cp > buf.readUInt16BE(sub + 14 + i * 2)) continue;
+      const start = buf.readUInt16BE(sub + 16 + segX2 + i * 2);
+      if (cp < start) return 0;
+      const delta = buf.readInt16BE(sub + 16 + segX2 * 2 + i * 2);
+      const roAt = sub + 16 + segX2 * 3 + i * 2;
+      const ro = buf.readUInt16BE(roAt);
+      if (ro === 0) return (cp + delta) & 0xffff;
+      const gi = buf.readUInt16BE(roAt + ro + (cp - start) * 2);
+      return gi ? (gi + delta) & 0xffff : 0;
+    }
+    return 0;
+  };
+
+  /* The same disarming js/pdf.js applies, repeated rather than imported because
+     pdf.js is a browser module this harness cannot require. If the two ever
+     drift apart, the assertions below are what notices. */
+  function disarm(doc) {
+    const events = doc.internal && doc.internal.events;
+    const topics = (events && events.getTopics && events.getTopics()) || {};
+    for (const token of Object.keys(topics.preProcessText || {})) events.unsubscribe(token);
+    const parser = jsPDF.API.__arabicParser__;
+    if (parser) parser.processArabic = (a) => (typeof a === 'string' ? a : (a && a.text));
+    const write = doc.text.bind(doc);
+    doc.text = (s, x, y, o) =>
+      write(s, x, y, { ...(o || {}), isInputVisual: true, isOutputVisual: true });
+  }
+
+  const drawn = (s, mode) => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    FONTS.forEach(([file, family, style, b64]) => {
+      doc.addFileToVFS(file, b64);
+      doc.addFont(file, family, style);
+    });
+    if (mode !== 'raw') disarm(doc);
+    doc.setFont('Amiri', 'normal').setFontSize(12);
+    doc.text(A.forPdf(s), 100, 20);
+    const bytes = Buffer.from(doc.output('arraybuffer')).toString('latin1');
+    const run = (bytes.match(/<([0-9A-Fa-f]{8,})>\s*Tj/) || [])[1] || '';
+    return (run.match(/..../g) || []).map((h) => parseInt(h, 16)).join(',');
+  };
+  const asked = (s) => [...A.forPdf(s)].map((c) => gidFor(c.codePointAt(0))).join(',');
+
+  /* "مدينة" is the sharp case for ORDER: it opens on a meem that must join
+     forwards, so a reversed run puts that meem at the wrong end and turns every
+     letter in the word the wrong way round. "إجمالي" is the sharp case for the
+     LIGATURE: its alef and lam are adjacent only after reordering. */
+  for (const s of ['مدينة', 'مدينة بدر القاهرة', 'إجمالي', 'خطة السداد',
+                   'وحدة QSE-050', 'خصم 20% من السعر قبل الخصم']) {
+    eq(drawn(s), asked(s), `jsPDF draws the glyphs forPdf() asked for: "${s}"`);
+  }
+
+  /* And prove the check has teeth — left to itself, jsPDF must break it. */
+  ok(drawn('مدينة', 'raw') !== asked('مدينة'),
+     'the check DOES fail when jsPDF is left to reprocess the text');
+
+  /* These are the glyphs the 2026-08-15 font swap silently lost: an Arabic
+     subset missing them drops every percentage and unit code from the offer. */
+  for (const [ch, what] of [['%', 'a percent sign'], ['²', 'a superscript two'],
+                            ['Q', 'a Latin capital'], ['-', 'a hyphen']]) {
+    ok(gidFor(ch.codePointAt(0)) !== 0, `the Arabic subset can draw ${what} "${ch}"`);
+  }
+
+  /* Everything above proves the TECHNIQUE works. It cannot prove the PDF still
+     uses it, because pdf.js is a browser module this harness cannot require and
+     the disarming had to be repeated above. So read the source: an offer that
+     stops calling disarmJsPdfArabic() goes straight back to disconnected
+     letters, and that must not be a silent change. */
+  const pdfSrc = fs.readFileSync(path.join(root, 'js/pdf.js'), 'utf8');
+  ok(/function disarmJsPdfArabic\b/.test(pdfSrc),
+     'js/pdf.js still defines disarmJsPdfArabic()');
+  ok(/RTL \? disarmJsPdfArabic\(doc\)/.test(pdfSrc),
+     'js/pdf.js still calls disarmJsPdfArabic() for an Arabic offer');
+  ok(/isOutputVisual: true/.test(pdfSrc),
+     'js/pdf.js still declares the output visual, so bidi cannot reverse the run');
+}
+
 /* ------------------------------------------------------------------ report  */
 
 if (fail) {
