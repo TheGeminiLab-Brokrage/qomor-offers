@@ -261,8 +261,16 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:8px 10px;text-align:start;border-bottom:1px solid var(--edge)}
 th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
 td.num,th.num{text-align:end}
-tr.yr td{background:rgba(255,255,255,.05);font-weight:600;font-size:11px;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--amber-soft)}
+/* The year column is narrow and quiet until a year opens on it. */
+td.yr,th.yr{width:64px;white-space:nowrap}
+/* The row a year starts on: bold, tinted, and carrying the yearly share. It
+   replaces the full-width divider row the table used to spend on each year. */
+tr.opens td{background:rgba(255,255,255,.05);font-weight:700}
+tr.opens td.yr{color:var(--amber-soft);letter-spacing:.04em}
+/* The down payment is the one row a customer looks for first, so it is the one
+   row given the accent. The reference layout uses the client's red here; ours
+   is amber because that is this document's accent — same job, our palette. */
+tr.dp td{background:rgba(255,158,61,.10);color:var(--amber-soft);font-weight:700}
 tr.milestone td{color:var(--amber-soft)}
 tr.total td{font-weight:700;border-top:2px solid var(--edge-hi);border-bottom:0}
 

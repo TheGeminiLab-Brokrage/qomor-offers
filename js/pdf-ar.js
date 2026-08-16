@@ -123,27 +123,26 @@ const PDF_STRINGS = {
   'pay.total': 'إجمالي المدفوع',
   'pay.delivery': 'التسليم',
 
-  'tbl.due': 'الاستحقاق',
+  /* Reworked 2026-08-16 to the layout the client sent: the year is a column
+     carrying the year's share of the price, and the old "الاستحقاق" column —
+     which repeated "السنة 1 + 3 أشهر" on every row — is gone. */
+  'tbl.year': 'السنة',
   'tbl.payment': 'الدفعة',
   'tbl.date': 'التاريخ',
-  'tbl.amount': 'المبلغ',
+  'tbl.amount': 'المبلغ (EGP)',
   'tbl.pct': '%',
-  'tbl.cont': '{label} (تابع)',
-  /* Compressed for the half-width column, exactly as the English is: the full
-     "قسط 12 من 32" does not fit beside a date and two figures. */
-  'tbl.inst': 'قسط {i}/{n}',
-  'tbl.instMilestone': 'قسط {i}/{n} +{pct}',
+  'tbl.yearly': '% سنوي',
+  'tbl.dp': 'المقدم',
+  /* The instalment number alone. The count is in the summary above the table,
+     and repeating "من 40" forty times is what the client asked to be rid of. */
+  'tbl.inst': 'قسط {i}',
+  'tbl.instMilestone': 'قسط {i} +{pct}',
 
-  /* The schedule's "when" column and its year bands. Duplicated from i18n.js
+  /* The year label for the schedule's Year column. Duplicated from i18n.js
      rather than imported because the PDF must not depend on the app's screen
      dictionary being loaded — scripts/test-pdf.js builds a document with no UI
-     at all. */
-  'when.contract': 'عند التعاقد',
-  'when.year': 'السنة {y}',
-  'when.month': 'شهر {m}',
-  'when.yearMonth': 'السنة {y} + شهر',
-  'when.yearMonths': 'السنة {y} + {m} أشهر',
-  'band.contract': 'عند التعاقد',
+     at all. The "when.*" set that sat beside it went with the Due column on
+     2026-08-16. */
   'band.year': 'السنة {y}',
 };
 
@@ -260,23 +259,12 @@ function minutes(s) {
   return `${n} دقيقة`;
 }
 
-/**
- * The schedule's "when" column, from the row's month offset.
- *
- * Same shape as tWhen() in i18n.js and kept here for the same reason the keys
- * are: the PDF has to be buildable without the app's dictionary loaded.
- */
-function pWhen(months) {
-  if (months === 0) return pt('when.contract');
-  if (months % 12 === 0) return pt('when.year', { y: months / 12 });
-  if (months < 12) return pt('when.month', { m: months });
-  const y = Math.floor(months / 12), r = months % 12;
-  return pt(r === 1 ? 'when.yearMonth' : 'when.yearMonths', { y, m: r });
-}
+/* pWhen() lived here until 2026-08-16, alongside the Due column it filled. */
 
-/** A year band's heading. */
+/** The year label for the schedule's Year column. Never called with year 0 —
+ *  that row shows tbl.dp instead, as the client's layout does. */
 function pBand(year) {
-  return year === 0 ? pt('band.contract') : pt('band.year', { y: year });
+  return pt('band.year', { y: year });
 }
 
 /** Look a PDF string up and fill its {placeholders}. */
@@ -299,19 +287,16 @@ function allStrings() {
   const out = Object.values(PDF_STRINGS);
   for (const map of Object.values(PDF_DATA_AR)) out.push(...Object.values(map));
   out.push(minutes('2 min'), minutes('5 min'), minutes('15 min'));
-  /* The built strings too, not just the templates they come from — pWhen picks
-     a different one per month offset and a broken branch would otherwise never
-     be looked at. */
-  for (const m of [0, 3, 6, 9, 12, 13, 15, 24, 36, 120]) out.push(pWhen(m));
-  for (const yr of [0, 1, 2, 5, 10]) out.push(pBand(yr));
+  /* The built strings too, not just the templates they come from. */
+  for (const yr of [1, 2, 5, 10]) out.push(pBand(yr));
   return out;
 }
 
 if (typeof window !== 'undefined') {
   window.PDF_STRINGS = PDF_STRINGS;
   window.pt = pt; window.pd = pd; window.minutes = minutes;
-  window.pWhen = pWhen; window.pBand = pBand;
+  window.pBand = pBand;
 }
 if (typeof module !== 'undefined') {
-  module.exports = { PDF_STRINGS, PDF_DATA_AR, pt, pd, minutes, pWhen, pBand, allStrings };
+  module.exports = { PDF_STRINGS, PDF_DATA_AR, pt, pd, minutes, pBand, allStrings };
 }

@@ -124,23 +124,31 @@ const STRINGS = {
     'save.headline': 'You save {amount} {currency}',
     'save.detail': '{pct} off — list price {list} {currency}, your price {price} {currency}. The instalment plan below is calculated on the discounted price.',
 
-    'table.due': 'Due',
-    'table.payment': 'Payment',
+    /* The schedule columns, reworked 2026-08-16 against a layout the client
+       sent: Year | Installment | Date | Amount | % | Yearly %. The old "Due"
+       column carried "Year 1 + 3 months" on every row, which the client called
+       out by name as the thing making the table hard to read. The year now
+       appears once, on the row it starts. */
+    'table.year': 'Year',
+    'table.payment': 'Installment',
     'table.date': 'Date',
-    'table.amount': 'Amount',
-    'table.pct': '% of price',
+    'table.amount': 'Amount (EGP)',
+    'table.pct': '%',
+    'table.yearly': 'Yearly %',
     'table.total': 'Total',
+    'table.dp': 'DP',
 
-    'row.down': 'Down payment',
-    'row.instalment': 'Instalment {i} of {n}',
-    'row.instalmentMilestone': 'Instalment {i} of {n} (includes {pct} milestone)',
-    'row.maintenance': 'Maintenance ({pct})',
-    'when.contract': 'On contract',
-    'when.year': 'Year {y}',
-    'when.month': 'Month {m}',
-    'when.yearMonth': 'Year {y} + {m} month',
-    'when.yearMonths': 'Year {y} + {m} months',
-    'band.contract': 'On contract',
+    'row.down': 'Down Payment',
+    /* "Inst. 4", not "Instalment 4 of 40" — the count is already in the
+       Installments summary above the table, and repeating it forty times is
+       what the client asked to be rid of. */
+    'row.instalment': 'Inst. {i}',
+    'row.instalmentMilestone': 'Inst. {i} +{pct}',
+    'row.maintenance': 'Maintenance {pct}',
+    /* The "when.*" set — "Year 1 + 3 months" and friends — went with the Due
+       column on 2026-08-16. It was the phrasing the client named as the thing
+       making the schedule hard to read, so it is deleted rather than left
+       lying around for someone to reinstate. */
     'band.year': 'Year {y}',
 
     'offer.send': 'Send offer on WhatsApp',
@@ -256,23 +264,19 @@ const STRINGS = {
     'save.headline': 'توفّر {amount} {currency}',
     'save.detail': 'خصم {pct} — السعر قبل الخصم {list} {currency}، وسعرك {price} {currency}. خطة الأقساط أدناه محسوبة على السعر بعد الخصم.',
 
-    'table.due': 'الاستحقاق',
+    'table.year': 'السنة',
     'table.payment': 'الدفعة',
     'table.date': 'التاريخ',
-    'table.amount': 'المبلغ',
-    'table.pct': '% من السعر',
+    'table.amount': 'المبلغ (EGP)',
+    'table.pct': '%',
+    'table.yearly': '% سنوي',
     'table.total': 'الإجمالي',
+    'table.dp': 'المقدم',
 
     'row.down': 'المقدم',
-    'row.instalment': 'قسط {i} من {n}',
-    'row.instalmentMilestone': 'قسط {i} من {n} (يشمل دفعة {pct})',
-    'row.maintenance': 'الصيانة ({pct})',
-    'when.contract': 'عند التعاقد',
-    'when.year': 'السنة {y}',
-    'when.month': 'شهر {m}',
-    'when.yearMonth': 'السنة {y} + شهر',
-    'when.yearMonths': 'السنة {y} + {m} أشهر',
-    'band.contract': 'عند التعاقد',
+    'row.instalment': 'قسط {i}',
+    'row.instalmentMilestone': 'قسط {i} +{pct}',
+    'row.maintenance': 'الصيانة {pct}',
     'band.year': 'السنة {y}',
 
     'offer.send': 'إرسال العرض على واتساب',
@@ -462,19 +466,9 @@ function tRowLabel(row) {
   return row.label;
 }
 
-/** A schedule row's "when" column, from the month offset. */
-function tWhen(months) {
-  if (months === 0) return t('when.contract');
-  if (months % 12 === 0) return t('when.year', { y: months / 12 });
-  if (months < 12) return t('when.month', { m: months });
-  const y = Math.floor(months / 12), r = months % 12;
-  return t(r === 1 ? 'when.yearMonth' : 'when.yearMonths', { y, m: r });
-}
-
-/** A year band's heading in the schedule. */
-function tBand(year) {
-  return year === 0 ? t('band.contract') : t('band.year', { y: year });
-}
+/* tWhen() and tBand() lived here until 2026-08-16. The schedule no longer has
+ * a Due column or a year heading row — the year is a column now, filled from
+ * t('band.year') on the row the year opens. */
 
 /**
  * Apply the current language to the document shell.
@@ -521,5 +515,5 @@ function setLang(next, onChange) {
 
 if (typeof module !== 'undefined') {
   module.exports = { STRINGS, DATA_AR, ASSUMPTIONS_AR, t, td, lang, isRTL,
-                     tWhen, tBand, tRowLabel, bidiSafe };
+                     tRowLabel, bidiSafe };
 }

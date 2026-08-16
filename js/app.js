@@ -553,45 +553,57 @@ function renderSchedule() {
     box.appendChild(save);
   }
 
+  /* THE YEAR IS A COLUMN, NOT A DIVIDER ROW — reworked 2026-08-16 against a
+     layout the client sent, and the point of it is density. The old table spent
+     a full-width row on every year heading and then repeated "Year 1 + 3
+     months" down a Due column beside it; the client's words were that this "is
+     just making it hard to read". The year now appears once, in its own narrow
+     column, on the row that year starts, with that year's share of the price
+     beside it. Ten divider rows disappear and the schedule reads as one list. */
   const table = el('table');
   const thead = el('thead');
   const hr = el('tr');
-  [t('table.due'), t('table.payment'), t('table.date'), t('table.amount'), t('table.pct')].forEach((h, i) => {
-    const th = el('th', i >= 3 ? 'num' : null, h);
-    hr.appendChild(th);
-  });
+  [['table.year', 'yr'], ['table.payment', null], ['table.date', null],
+   ['table.amount', 'num'], ['table.pct', 'num'], ['table.yearly', 'num']]
+    .forEach(([key, cls]) => hr.appendChild(el('th', cls, t(key))));
   thead.appendChild(hr);
   table.appendChild(thead);
 
   const tbody = el('tbody');
   for (const block of scheduleByYear(rows, summary.price)) {
-    /* The year row is a divider, not a subtotal. It used to print the year's
-       summed instalments and percentage; the client asked on 2026-08-12 for the
-       label alone, so the customer reads one running schedule rather than
-       stopping to reconcile a per-year figure. scheduleByYear still computes
-       block.total/pct — they are used by the tests, and by nothing on screen. */
-    const yr = el('tr', 'yr');
-    /* `td` is the data-translation helper now — this cell used to shadow it. */
-    const cellYear = el('td', null, tBand(block.year));
-    cellYear.colSpan = 5;
-    yr.appendChild(cellYear);
-    tbody.appendChild(yr);
-
-    for (const r of block.rows) {
-      const tr = el('tr', r.milestone ? 'milestone' : null);
-      tr.appendChild(el('td', null, tWhen(r.month)));
+    block.rows.forEach((r, i) => {
+      /* `opens` is the row the year starts on: it carries the label and the
+         yearly percentage, and it is the row set in bold. Every other row in
+         the year leaves both cells empty, which is what makes the year read as
+         one group without a heading between them. */
+      const opens = i === 0;
+      const tr = el('tr', [
+        opens ? 'opens' : '',
+        block.year === 0 ? 'dp' : '',
+        r.milestone ? 'milestone' : '',
+      ].filter(Boolean).join(' ') || null);
+      tr.appendChild(el('td', 'yr', opens
+        ? (block.year === 0 ? t('table.dp') : t('band.year', { y: block.year })) : ''));
       tr.appendChild(el('td', null, tRowLabel(r)));
       tr.appendChild(el('td', null, bidiSafe(fmtDate(r.date))));
       tr.appendChild(el('td', 'num', fmt(r.amount)));
       tr.appendChild(el('td', 'num', fmtPct(r.pct)));
+      tr.appendChild(el('td', 'num', opens ? fmtPct(block.pct) : ''));
       tbody.appendChild(tr);
-    }
+    });
   }
+  /* The reference layout ends on a flat 100%, because there the instalments are
+     the whole price. Ours are not: the 9% maintenance is charged ON TOP of the
+     price, so the schedule foots to 109% of it. Printing 100% here would be a
+     wrong number on the document a customer is asked to agree to, so it is
+     computed from the rows rather than assumed. */
+  const payable = scheduleTotal(rows);
   const tot = el('tr', 'total');
+  tot.appendChild(el('td', 'yr', ''));
   tot.appendChild(el('td', null, t('table.total')));
-  tot.appendChild(el('td', null, t('pay.planOf', { label: td('plan', summary.planLabel) })));
   tot.appendChild(el('td', null, ''));
-  tot.appendChild(el('td', 'num', fmt(scheduleTotal(rows))));
+  tot.appendChild(el('td', 'num', fmt(payable)));
+  tot.appendChild(el('td', 'num', fmtPct(summary.price ? (payable / summary.price) * 100 : 0)));
   tot.appendChild(el('td', 'num', ''));
   tbody.appendChild(tot);
 

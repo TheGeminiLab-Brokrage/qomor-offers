@@ -1529,17 +1529,15 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      column ran off the bottom of the page. Here the only inputs are the rows
      and bands this particular plan actually has, so a 4-year plan gets generous
      rows and a 10-year one is tightened just enough to fit. */
-  const nBands = blocks.length, nRows = rows.length;
+  /* NO BAND ROWS ANY MORE — the year is a column, so a ten-year plan spends
+     ten fewer rows on headings and every remaining row gets taller for it. */
+  const nRows = rows.length;
   const perColH = BOTTOM - TOP - HEAD_H;
-  const bandH = BAND_H + BAND_EXTRA;
-  const rowHeightFor = (cols, bands) => (cols * perColH - bands * bandH) / nRows;
+  const rowHeightFor = (cols) => (cols * perColH) / nRows;
 
-  /* Two columns cost ONE EXTRA BAND: whichever year straddles the split gets
-     its band repeated as "(CONT.)" at the top of the second column. Leaving it
-     out of the budget pushed the final instalment underneath the total bar. */
   let twoCol = false;
-  let ROW_H = rowHeightFor(1, nBands);
-  if (ROW_H < MIN_ROW) { twoCol = true; ROW_H = rowHeightFor(2, nBands + 1); }
+  let ROW_H = rowHeightFor(1);
+  if (ROW_H < MIN_ROW) { twoCol = true; ROW_H = rowHeightFor(2); }
   ROW_H = Math.min(MAX_ROW, ROW_H);
 
   const GAP = 9;
@@ -1550,25 +1548,23 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      wrong order, which on a payment schedule is not a cosmetic problem. */
   const colX = (c) => M + (RTL && twoCol ? 1 - c : c) * (colW + GAP);
 
-  /* Split the two columns by HEIGHT, not by row count — year bands make rows
-     unevenly costly, and splitting on count leaves one column short. */
-  const contentH = (nBands + (twoCol ? 1 : 0)) * bandH + nRows * ROW_H;
-  /* Clamped to BOTTOM, not BOTTOM - ROW_H: the row height above is solved so
-     that two full columns exactly fill the page, so holding the first column
-     back by a row leaves the second one over-full by the same row. */
+  /* Every row now costs the same, so the split is simply half the rows. */
+  const contentH = nRows * ROW_H;
   const splitAt = Math.min(TOP + HEAD_H + contentH / 2, BOTTOM);
 
   /* Column positions are fractions of the column, so the same code lays out the
      full-width single column and the narrow paired ones.
      `cx` mirrors an anchor inside THIS table column, which is what reverses the
-     five fields: Due ends up on the right and % on the left, and the row still
-     reads Due, Payment, Date, Amount, % in the direction the page is read. */
+     six fields: Year ends up on the right and Yearly % on the left, and the row
+     still reads Year, Instalment, Date, Amount, %, Yearly % in the direction the
+     page is read. */
   const cx = (c, x) => ax(x, colX(c), colX(c) + colW);
-  const cDue  = (c) => cx(c, colX(c) + 1.5);
-  const cPay  = (c) => cx(c, colX(c) + colW * 0.27);
-  const cDate = (c) => cx(c, colX(c) + colW * 0.61);
-  const cAmt  = (c) => cx(c, colX(c) + colW * 0.87);
-  const cPct  = (c) => cx(c, colX(c) + colW - 1.5);
+  const cYear = (c) => cx(c, colX(c) + 1.5);
+  const cPay  = (c) => cx(c, colX(c) + colW * 0.14);
+  const cDate = (c) => cx(c, colX(c) + colW * 0.37);
+  const cAmt  = (c) => cx(c, colX(c) + colW * 0.64);
+  const cPct  = (c) => cx(c, colX(c) + colW * 0.80);
+  const cYrPct = (c) => cx(c, colX(c) + colW - 1.5);
 
   /* "Instalment 12 of 32 (includes 10% milestone)" does not fit a half-width
      column; the same fact in a third of the space. In Arabic the label already
@@ -1578,7 +1574,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   const shortLabel = (r) => {
     if (!RTL) {
       return latin(r.label)
-        .replace(/Instalment (\d+) of (\d+)/, 'Instalment $1/$2')
+        .replace(/Instalment (\d+) of \d+/, 'Inst. $1')
         .replace(/\s*\(includes (\d+)% milestone\)/, ' +$1%');
     }
     /* The Arabic is built from the row's structured key rather than by
@@ -1593,22 +1589,26 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
       : pt('tbl.inst', { i: k.i, n: k.n });
   };
 
+  /* A SOLID NAVY HEADER BAR, matching the layout the client sent (theirs is
+     black; navy is the same device in this document's palette) and matching the
+     total bar at the foot, so the schedule is visibly bracketed. */
   const tableHead = (c, yy) => {
-    setFill(doc, [244, 247, 250]);
-    doc.rect(colX(c), yy - 4.2, colW, 6.2, 'F');
-    /* No tracking on these: two of the five are right-aligned, and jsPDF does
+    setFill(doc, NAVY);
+    doc.rect(colX(c), yy - 4.2, colW, 6.4, 'F');
+    /* No tracking on these: three of the six are right-aligned, and jsPDF does
        not count character spacing when it measures a run for alignment. */
     doc.setFont(SANS, 'bold').setFontSize(5.8);
-    setText(doc, MUTED);
+    setText(doc, PAPER);
     const head = (key, en, at, ends) => {
       const s = RTL ? pt(key) : en;
       doc.text(TX(s), at, yy, ends ? endAlign() : startAlign());
     };
-    head('tbl.due', 'DUE', cDue(c), false);
-    head('tbl.payment', 'PAYMENT', cPay(c), false);
+    head('tbl.year', 'YEAR', cYear(c), false);
+    head('tbl.payment', 'INSTALLMENT', cPay(c), false);
     head('tbl.date', 'DATE', cDate(c), false);
-    head('tbl.amount', 'AMOUNT', cAmt(c), true);
+    head('tbl.amount', 'AMOUNT (EGP)', cAmt(c), true);
     head('tbl.pct', '%', cPct(c), true);
+    head('tbl.yearly', 'YEARLY %', cYrPct(c), true);
     return yy + 6.5;
   };
 
@@ -1619,43 +1619,50 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      col 0 -> 1; the height maths guarantees two columns are enough for every
      plan the client offers, and the guard below catches it if that ever stops
      being true. */
-  const nextColumn = (bandLabel) => {
-    col += 1;
-    ty = tableHead(col, TOP);
-    if (bandLabel != null) {
-      setFill(doc, [250, 245, 236]);
-      doc.rect(colX(col), ty - 3.8, colW, 5.4, 'F');
-      doc.setFont(SANS, 'bold').setFontSize(6);
-      setText(doc, [147, 110, 44]);
-      doc.text(TX(RTL ? pt('tbl.cont', { label: pBand(bandLabel) })
-                      : String(bandLabel).toUpperCase() + ' (CONT.)'),
-               cDue(col), ty, startAlign());
-      ty += BAND_H + BAND_EXTRA;
-    }
-  };
+  const nextColumn = () => { col += 1; ty = tableHead(col, TOP); };
 
+  /* ONE ROW PER PAYMENT, and the year rides on the row it starts.
+   *
+   * `opensYear` carries the year label and that year's share of the price, and
+   * is the row set in bold on a tinted band — it does the work the full-width
+   * heading row used to do, in a column, for no extra height.
+   *
+   * `carried` re-states the year at the top of the second column when a year
+   * straddles the split. Without it the right-hand column opens on a bare
+   * instalment and the reader has to trace back across the page to find which
+   * year they are in. It repeats the label only: the yearly percentage stays
+   * where the year actually opened, so it is never stated twice. */
+  const GOLD_DARK = [147, 110, 44];
+  let carriedYear = false;
   for (const block of blocks) {
-    // Never strand a year band at the foot of a column with no rows under it.
-    if (twoCol && col === 0 && ty + BAND_H + ROW_H > splitAt) nextColumn(null);
+    block.rows.forEach((r, i) => {
+      if (twoCol && col === 0 && ty > splitAt) { nextColumn(); carriedYear = true; }
+      const opensYear = i === 0;
+      const showYear = opensYear || carriedYear;
+      carriedYear = false;
 
-    setFill(doc, [250, 245, 236]);
-    doc.rect(colX(col), ty - 3.8, colW, 5.4, 'F');
-    doc.setFont(SANS, 'bold').setFontSize(6);
-    setText(doc, [147, 110, 44]);
-    doc.text(TX(RTL ? pBand(block.year) : String(block.label).toUpperCase()),
-             cDue(col), ty, startAlign());
-    ty += BAND_H + BAND_EXTRA;
-
-    for (const r of block.rows) {
-      if (twoCol && col === 0 && ty > splitAt) nextColumn(RTL ? block.year : block.label);
-      if (r.milestone) {
+      const isDown = block.year === 0;
+      if (isDown) {                       // the row the customer looks for first
+        setFill(doc, [251, 241, 224]);
+        doc.rect(colX(col), ty - 3.4, colW, ROW_H, 'F');
+      } else if (opensYear) {
+        setFill(doc, [250, 245, 236]);
+        doc.rect(colX(col), ty - 3.4, colW, ROW_H, 'F');
+      } else if (r.milestone) {
         setFill(doc, [253, 250, 244]);
         doc.rect(colX(col), ty - 3.4, colW, ROW_H, 'F');
       }
-      doc.setFont(SANS, r.milestone ? 'bold' : 'normal').setFontSize(6.2);
-      setText(doc, INK);
-      doc.text(TX(RTL ? pWhen(r.month) : r.when), cDue(col), ty, startAlign());
-      setText(doc, r.milestone ? INK : MUTED);
+
+      const heavy = isDown || opensYear || r.milestone;
+      doc.setFont(SANS, heavy ? 'bold' : 'normal').setFontSize(6.2);
+
+      setText(doc, GOLD_DARK);
+      doc.text(TX(showYear ? (isDown ? S('tbl.dp', null, 'DP')
+                                     : (RTL ? pBand(block.year) : String(block.label)))
+                           : ''),
+               cYear(col), ty, startAlign());
+
+      setText(doc, heavy ? INK : MUTED);
       doc.text(TX(shortLabel(r)), cPay(col), ty, startAlign());
       /* Dates and figures are never translated and never reordered — they are
          the numbers the customer checks against the contract. They still move
@@ -1663,14 +1670,15 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
       doc.text(fmtDate(r.date), cDate(col), ty, startAlign());
       setText(doc, INK);
       doc.text(fmt(r.amount), cAmt(col), ty, endAlign());
-      setText(doc, MUTED);
-      doc.setFont(SANS, 'normal');
+      setText(doc, heavy ? INK : MUTED);
       doc.text(fmtPct(r.pct), cPct(col), ty, endAlign());
+      setText(doc, GOLD_DARK);
+      doc.text(opensYear ? fmtPct(block.pct) : '', cYrPct(col), ty, endAlign());
 
       setDraw(doc, LINE); doc.setLineWidth(0.12);
       doc.line(colX(col), ty + 1.3, colX(col) + colW, ty + 1.3);
       ty += ROW_H;
-    }
+    });
   }
 
   /* Total spans the full width under both columns, so it reads as the end of
