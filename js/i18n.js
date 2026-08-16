@@ -103,6 +103,12 @@ const STRINGS = {
     'unit.discount': 'Discount {pct}',
     'unit.priceAfter': 'Price after discount',
     'unit.price': 'Price',
+    'unit.meterPrice': 'Price per m²',
+    'unit.meterPriceOutdoor': 'Outdoor price per m²',
+    /* Two rates on one line, list then discounted, because the agent is asked
+       for "the metre price" as a single answer and reads it off mid-call. */
+    'unit.rateWas': '{list} → {now} {currency}/m²',
+    'unit.rateFlat': '{now} {currency}/m²',
     'unit.status': 'Status: {status}',
 
     'pay.plan': 'Payment plan',
@@ -224,6 +230,17 @@ const STRINGS = {
     'unit.discount': 'خصم {pct}',
     'unit.priceAfter': 'السعر بعد الخصم',
     'unit.price': 'السعر',
+    'unit.meterPrice': 'سعر المتر',
+    'unit.meterPriceOutdoor': 'سعر المتر الخارجي',
+    /* "m²" IN LATIN, NOT "م²", and this is load-bearing rather than a style
+       choice. bidiSafe() only isolates a value that has no Arabic letter in it,
+       so an Arabic "م" here left the run unisolated and the bidi algorithm
+       reordered it: the list rate and the discounted rate swapped sides and the
+       arrow pointed from the discount UP to the list price. Latin m² keeps the
+       whole value one LTR atom, which is also what the area row above it and
+       the PDF both already use. */
+    'unit.rateWas': '{list} → {now} {currency}/m²',
+    'unit.rateFlat': '{now} {currency}/m²',
     'unit.status': 'الحالة: {status}',
 
     'pay.plan': 'خطة السداد',
@@ -314,7 +331,11 @@ const DATA_AR = {
     '9 years': '9 سنوات',
     '10 years': '10 سنوات',
   },
-  currency: { EGP: 'ج.م' },
+  /* NO currency entry, deliberately — the same call the user made for the PDF
+     on 2026-08-15, "for the numbers and EGP keep those in english", applied
+     here so the screen and the document a customer is sent cannot disagree.
+     td() returns its argument unchanged when a key is missing, so removing the
+     mapping is the whole change and CONFIG.currency prints as EGP. */
 };
 
 /**

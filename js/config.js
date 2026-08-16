@@ -37,10 +37,51 @@ const CONFIG = {
    * tab today; normalizeRows() validates the header row and fails closed if it
    * ever stops being, which is the only real protection.
    */
-  sheetId: '1E8ecaVRrxO2vRd1DJTySH9_5oLwnJBDBuOamIfwQV2c',
-  sheetUrls: [
-    'https://docs.google.com/spreadsheets/d/1E8ecaVRrxO2vRd1DJTySH9_5oLwnJBDBuOamIfwQV2c/gviz/tq?tqx=out:csv',
-    'https://docs.google.com/spreadsheets/d/1E8ecaVRrxO2vRd1DJTySH9_5oLwnJBDBuOamIfwQV2c/export?format=csv',
+  /* TWO WORKBOOKS, AND WHICH TEAM THIS APP IS FOR.
+   *
+   * The client replaced the single workbook on 2026-08-16. There are three
+   * partners: one has a sales team cleared to sell the whole project INCLUDING
+   * the third floor, the other two may not sell the third floor at all. So the
+   * inventory now arrives as two separate workbooks, and which of them an app
+   * reads is what decides what that app is allowed to sell.
+   *
+   * THIS BUILD IS FOR THE TEAM CLEARED FOR EVERYTHING, so it reads both. A
+   * second app for the other two teams comes later and reads `project` ONLY —
+   * dropping `thirdFloor` from this list is the whole change, which is why the
+   * sources are a list rather than two fields. Do not "tidy" it back into one.
+   *
+   * Every unit in `thirdFloor` is a TH code and every unit in `project` is not,
+   * so the merge cannot collide; loadInventory() still refuses a duplicate code
+   * and names the workbook it came from.
+   *
+   * gviz first: it echoes the caller's Origin (so CORS works from anywhere) and
+   * sends Cache-Control: no-cache, which is what keeps a sold unit from being
+   * offered. `export?format=csv` is the fallback.
+   *
+   * TRAP, unchanged: gviz IGNORES an unknown `sheet=` parameter and silently
+   * serves the FIRST tab instead of erroring, so the tab name is not a usable
+   * selector. The inventory is the first tab in both workbooks today;
+   * normalizeRows() validates the header row and fails closed if that changes.
+   */
+  sheets: [
+    {
+      key: 'project',
+      label: 'the project inventory',
+      id: '1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ',
+      urls: [
+        'https://docs.google.com/spreadsheets/d/1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ/gviz/tq?tqx=out:csv',
+        'https://docs.google.com/spreadsheets/d/1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ/export?format=csv',
+      ],
+    },
+    {
+      key: 'thirdFloor',
+      label: 'the third-floor inventory',
+      id: '1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI',
+      urls: [
+        'https://docs.google.com/spreadsheets/d/1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI/gviz/tq?tqx=out:csv',
+        'https://docs.google.com/spreadsheets/d/1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI/export?format=csv',
+      ],
+    },
   ],
 
   /* Fail closed: only these count as sellable. Everything else — including a

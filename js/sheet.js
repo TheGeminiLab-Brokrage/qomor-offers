@@ -57,6 +57,11 @@ const COLUMNS = {
   floor:     ['floor'],
   meterPrice:['indoor sqm price', 'indoor meter price', 'meter price', 'price per meter'],
   outdoorPrice: ['outdoor sqm price', 'outdoor meter price'],
+  /* The discounted rates, added by the client 2026-08-16 so the agent can quote
+   * a rate per metre as well as a total. Read rather than derived: they are what
+   * the customer's contract will say. */
+  meterPriceFinal:   ['final indoor sqm price', 'final indoor meter price'],
+  outdoorPriceFinal: ['final outdoor sqm price', 'final outdoor meter price'],
   total:     ['total unit price', 'total price'],
   discount:  ['discount'],
   price:     ['final price', 'net price'],
@@ -72,6 +77,25 @@ function mapHeaders(headerRow) {
       const at = seen.indexOf(alias);
       if (at !== -1) { idx[key] = at; break; }
     }
+  }
+
+  /* THE PROJECT WORKBOOK HAS TWO COLUMNS BOTH HEADED "Outdoor SQM Price".
+   *
+   * The third-floor workbook names them properly — "Outdoor SQM Price" and
+   * "Final Outdoor SQM Price" — but the project one repeats the first name for
+   * both, so matching on text alone finds the list rate twice and the
+   * discounted rate never. Quoting a discounted rate that is really the list
+   * rate is the kind of error that reaches a customer's contract, so resolve it
+   * by POSITION when the name is missing: the second occurrence is the
+   * discounted one. Verified against all 348 rows carrying an outdoor rate on
+   * 2026-08-16 — the second column equals the first times (1 - discount) in
+   * every one.
+   *
+   * Guarded on the pair being distinct, so a workbook that one day names the
+   * column correctly is unaffected. */
+  if (idx.outdoorPriceFinal === undefined && idx.outdoorPrice !== undefined) {
+    const second = seen.indexOf('outdoor sqm price', idx.outdoorPrice + 1);
+    if (second !== -1) idx.outdoorPriceFinal = second;
   }
   return idx;
 }
@@ -153,6 +177,8 @@ function normalizeRows(rows, planAreas) {
     const outdoor = parseNumber(cell('outdoor')) || 0;
     let meterPrice = parseNumber(cell('meterPrice'));
     const outdoorPrice = parseNumber(cell('outdoorPrice'));
+    let meterPriceFinal = parseNumber(cell('meterPriceFinal'));
+    let outdoorPriceFinal = parseNumber(cell('outdoorPriceFinal'));
 
     /* Discount is written as a percentage in the sheet ("15%"), so parseNumber
      * yields 15, not 0.15. Anything above 1 is therefore a percentage figure. */
@@ -204,6 +230,29 @@ function normalizeRows(rows, planAreas) {
       warnings.push(`${where}: ${total.toLocaleString()} less ${(discount * 100).toFixed(0)}% ≠ ${price.toLocaleString()}.`);
     }
 
+    /* The discounted rates get the same treatment as every other figure the
+     * sheet hands over: cross-footed, not trusted. Both held on all 712 priced
+     * rows on 2026-08-16. A failure here most likely means the two same-named
+     * outdoor columns have been reordered, which would put the LIST rate on the
+     * offer under the word "after discount". */
+    if (meterPrice && meterPriceFinal
+        && Math.abs(meterPriceFinal - meterPrice * (1 - discount)) > 1) {
+      warnings.push(`${where}: the sheet's discounted indoor rate ${meterPriceFinal.toLocaleString()} is not `
+                  + `${meterPrice.toLocaleString()} less ${(discount * 100).toFixed(0)}% — showing the calculated rate.`);
+      meterPriceFinal = null;
+    }
+    if (outdoorPrice && outdoorPriceFinal
+        && Math.abs(outdoorPriceFinal - outdoorPrice * (1 - discount)) > 2) {
+      warnings.push(`${where}: the sheet's discounted outdoor rate ${outdoorPriceFinal.toLocaleString()} is not `
+                  + `${outdoorPrice.toLocaleString()} less ${(discount * 100).toFixed(0)}% — showing the calculated rate.`);
+      outdoorPriceFinal = null;
+    }
+    /* Blank, or rejected just above: fall back to the rate implied by the price
+     * the offer is actually built on, so what the agent reads per metre and what
+     * they quote as a total can never tell the customer two different stories. */
+    if (meterPrice && meterPriceFinal === null) meterPriceFinal = meterPrice * (1 - discount);
+    if (outdoorPrice && outdoorPriceFinal === null) outdoorPriceFinal = outdoorPrice * (1 - discount);
+
     const statusRaw = cell('status');
     const status = norm(statusRaw);
     let state = 'sold';
@@ -246,6 +295,8 @@ function normalizeRows(rows, planAreas) {
       outdoor,
       meterPrice,
       outdoorPrice,
+      meterPriceFinal,        // indoor rate after the unit's discount
+      outdoorPriceFinal,      // outdoor rate after it, null when there is no outdoor
       total: total ?? price,   // pre-discount list price
       discount,                // fraction, e.g. 0.15
       price,                   // Final Price — what the plan is calculated on
@@ -287,24 +338,75 @@ function collapseWarnings(warnings, keep = 4) {
   return out;
 }
 
-/** Fetch the sheet, falling back through the URL list, then to the snapshot. */
-async function loadInventory(planAreas) {
-  const errors = [];
-
-  for (const url of CONFIG.sheetUrls) {
+/** One workbook: try each URL in turn, return its units or null. */
+async function loadOneSheet(source, planAreas, errors) {
+  for (const url of source.urls) {
     try {
       const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) { errors.push(`${res.status} from ${new URL(url).pathname}`); continue; }
+      if (!res.ok) { errors.push(`${res.status} from ${source.label}`); continue; }
       const text = await res.text();
       // A login page means the sheet stopped being published.
-      if (/^\s*</.test(text)) { errors.push('the sheet is no longer published publicly'); continue; }
+      if (/^\s*</.test(text)) { errors.push(`${source.label} is no longer published publicly`); continue; }
 
       const { units, warnings } = normalizeRows(parseCSV(text), planAreas);
-      if (!units.length) { errors.push(warnings[0] || 'no usable rows'); continue; }
-      return { units, warnings, live: true, fetchedAt: new Date(), errors };
+      if (!units.length) { errors.push(`${source.label}: ${warnings[0] || 'no usable rows'}`); continue; }
+      return { units, warnings };
     } catch (err) {
-      errors.push(err.message);
+      errors.push(`${source.label}: ${err.message}`);
     }
+  }
+  return null;
+}
+
+/**
+ * Fetch every workbook in CONFIG.sheets, falling back through each one's URL
+ * list, then to the snapshot.
+ *
+ * ONE MISSING WORKBOOK MUST NOT LOOK LIKE A SOLD-OUT FLOOR. The third floor is
+ * a separate workbook (see CONFIG.sheets), so if it alone fails to load, the
+ * app would otherwise open looking perfectly healthy with the entire third
+ * floor simply absent — and an agent would tell a customer it was gone. So a
+ * partial load keeps what it has, says plainly which inventory is missing, and
+ * reports itself as not live, which is what drives the stale badge in the UI.
+ */
+async function loadInventory(planAreas) {
+  const errors = [];
+  const sources = CONFIG.sheets || [];
+
+  const loaded = await Promise.all(sources.map((s) => loadOneSheet(s, planAreas, errors)));
+
+  const units = [];
+  const warnings = [];
+  const seen = new Map();
+  let missing = 0;
+
+  loaded.forEach((got, i) => {
+    if (!got) {
+      missing += 1;
+      warnings.push(`Could not load ${sources[i].label} — every unit in it is missing from this list.`);
+      return;
+    }
+    warnings.push(...got.warnings);
+    for (const u of got.units) {
+      /* Codes cannot collide today — the third-floor workbook is all TH codes
+         and the project one has none — but if the client ever lists a unit in
+         both, the two rows can disagree on price. Keep the first and name both
+         workbooks, rather than letting load order decide what a customer pays. */
+      if (seen.has(u.code)) {
+        warnings.push(`${u.code} is in both ${seen.get(u.code)} and ${sources[i].label} — `
+                    + `using the copy from ${seen.get(u.code)}.`);
+        continue;
+      }
+      seen.set(u.code, sources[i].label);
+      units.push(u);
+    }
+  });
+
+  /* Not collapsed again here — normalizeRows() has already collapsed each
+     workbook's own warnings, and running it over the results would append a
+     second "(and N more like it)" to lines that already carry one. */
+  if (units.length) {
+    return { units, warnings, live: !missing, fetchedAt: new Date(), errors };
   }
 
   // Offline / sheet unreachable: fall back to the snapshot baked in at build
@@ -323,10 +425,10 @@ async function loadInventory(planAreas) {
     };
   }
 
-  const { units, warnings } = normalizeRows(parseCSV(snap.csv), planAreas);
+  const fromSnapshot = normalizeRows(parseCSV(snap.csv), planAreas);
   return {
-    units,
-    warnings,
+    units: fromSnapshot.units,
+    warnings: fromSnapshot.warnings,
     live: false,
     fetchedAt: snap.takenAt ? new Date(snap.takenAt) : null,
     errors,

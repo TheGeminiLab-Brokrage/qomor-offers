@@ -25,8 +25,8 @@ const src = ['js/config.js', 'js/sheet.js', 'js/engine.js']
 
 const G = new Function(`${src}
   return { CONFIG, ASSUMPTIONS, parseCSV, parseNumber, normalizeRows, parseUnitCode,
-           buildSchedule, scheduleByYear, scheduleTotal, levelRate, milestonesFor,
-           pctLabel, addMonths, fmt };`)();
+           mapHeaders, buildSchedule, scheduleByYear, scheduleTotal, levelRate,
+           milestonesFor, pctLabel, addMonths, fmt };`)();
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -236,6 +236,53 @@ section('sheet arithmetic is cross-footed');
   ok(w2.some((w) => /floor column says/i.test(w)), 'floor/code disagreement reported');
 }
 
+section('rate per metre, and the two columns with the same name');
+{
+  /* THE PROJECT WORKBOOK HEADS TWO DIFFERENT COLUMNS "Outdoor SQM Price" —
+     the list rate and the discounted one. Matching on text alone finds the list
+     rate twice, so the app would show a "discounted" rate that is really the
+     list rate, and an agent would quote it. Resolved by position; this is the
+     test that says so. */
+  const dupHead = 'Building,Unit Code,Type,Net Area,Area,Outdoor,Floor,Indoor SQM Price,'
+                + 'Final Indoor SQM Price,Outdoor SQM Price,Outdoor SQM Price,'
+                + 'Total Unit Price,Discount,Final Price,Availability';
+  const idx = G.mapHeaders(dupHead.split(','));
+  eq(idx.outdoorPrice, 9, 'the FIRST "Outdoor SQM Price" is the list rate');
+  eq(idx.outdoorPriceFinal, 10, 'the SECOND is read as the discounted rate');
+
+  const row = 'Q,QSP-004,Retail,28,43.68,12.5,Sky Plaza,188000,159800,62667,53267,'
+            + '8995173,15%,7645897,Available';
+  const { units } = G.normalizeRows(G.parseCSV(`${dupHead}\n${row}`));
+  eq(units.length, 1, 'the row survives');
+  eq(units[0].meterPrice, 188000, 'list indoor rate read');
+  eq(units[0].meterPriceFinal, 159800, 'discounted indoor rate read, not derived');
+  eq(units[0].outdoorPrice, 62667, 'list outdoor rate read');
+  eq(units[0].outdoorPriceFinal, 53267, 'discounted outdoor rate read from the second column');
+
+  /* Properly named columns must still win — this is the third-floor workbook. */
+  const named = dupHead.replace('Outdoor SQM Price,Outdoor SQM Price', 'Outdoor SQM Price,Final Outdoor SQM Price');
+  const byName = G.mapHeaders(named.split(','));
+  eq(byName.outdoorPriceFinal, 10, 'a properly named Final column is used as-is');
+
+  /* A discounted rate that does not match the discount is the shape of a
+     reordered column, so it must be rejected rather than quoted. */
+  const wrong = 'Q,QSP-005,Retail,28,43.68,12.5,Sky Plaza,188000,188000,62667,62667,'
+              + '8995173,15%,7645897,Available';
+  const bad = G.normalizeRows(G.parseCSV(`${dupHead}\n${wrong}`));
+  ok(bad.warnings.some((w) => /discounted indoor rate/.test(w)),
+     'a discounted rate that ignores the discount is reported');
+  eq(Math.round(bad.units[0].meterPriceFinal), Math.round(188000 * 0.85),
+     'and the calculated rate is shown instead, so screen and contract agree');
+
+  /* Blank columns: fall back to the rate the price itself implies. */
+  const noFinal = 'Building,Unit Code,Type,Net Area,Area,Outdoor,Floor,Indoor SQM Price,'
+                + 'Outdoor SQM Price,Total Unit Price,Discount,Final Price,Availability\n'
+                + 'Q,QSP-006,Retail,32,49.92,0,Sky Plaza,188000,62667,9384960,15%,7977216,Available';
+  const derived = G.normalizeRows(G.parseCSV(noFinal)).units[0];
+  eq(Math.round(derived.meterPriceFinal), Math.round(188000 * 0.85),
+     'with no Final column at all, the discounted rate is derived');
+}
+
 section('duplicate and malformed rows');
 {
   const header = 'Building,Unit Code,Type,Net Area,Area,Outdoor,Floor,Indoor SQM Price,Outdoor SQM Price,Total Unit Price,Discount,Final Price,Availability';
@@ -255,13 +302,33 @@ section('duplicate and malformed rows');
 /* ------------------------------------------------------------ live sheet -- */
 async function live() {
   section('live sheet');
-  const res = await fetch(G.CONFIG.sheetUrls[0], { cache: 'no-store' });
-  ok(res.ok, `sheet responds ${res.status}`);
-  const text = await res.text();
-  ok(!/^\s*</.test(text), 'response is CSV, not a login page');
+  /* BOTH workbooks, each checked on its own. The third floor is a separate
+     sheet, and a silent failure there would look exactly like a floor that had
+     sold out — so assert each one responds and carries units, not just that the
+     merged total is non-empty. */
+  const units = [], warnings = [];
+  for (const source of G.CONFIG.sheets) {
+    const res = await fetch(source.urls[0], { cache: 'no-store' });
+    ok(res.ok, `${source.label} responds ${res.status}`);
+    const text = await res.text();
+    ok(!/^\s*</.test(text), `${source.label} returns CSV, not a login page`);
+    const got = G.normalizeRows(G.parseCSV(text));
+    ok(got.units.length > 0, `${source.label} parsed ${got.units.length} units`);
+    units.push(...got.units);
+    warnings.push(...got.warnings);
+  }
+  ok(units.length > 0, `parsed ${units.length} units across ${G.CONFIG.sheets.length} workbooks`);
 
-  const { units, warnings } = G.normalizeRows(G.parseCSV(text));
-  ok(units.length > 0, `parsed ${units.length} units`);
+  const codes = new Set();
+  const clash = units.filter((u) => (codes.has(u.code) ? true : (codes.add(u.code), false)));
+  ok(!clash.length, `no unit code appears in two workbooks${clash.length ? ` (${clash[0].code})` : ''}`);
+
+  /* The whole point of this build: the team using it may sell the third floor.
+     If TH ever stops arriving, the app still looks healthy and simply offers
+     nothing on that floor, which is the failure nobody would notice. */
+  const th = units.filter((u) => u.floorCode === 'TH');
+  ok(th.length > 0, `third floor present — ${th.length} units, ${th.filter((u) => u.state === 'available').length} available`);
+
   const avail = units.filter((u) => u.state === 'available');
   console.log(`   ${units.length} units, ${avail.length} available, ${warnings.length} warnings`);
   warnings.slice(0, 8).forEach((w) => console.log(`   ! ${w}`));

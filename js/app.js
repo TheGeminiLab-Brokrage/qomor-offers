@@ -467,6 +467,24 @@ function renderUnitCard() {
   } else {
     cell(t('unit.price'), fmt(u.price) + ' ' + cur);
   }
+
+  /* THE RATE PER METRE, list and discounted, added on the user's request
+     2026-08-16: it is the first thing a customer asks on the phone, and until
+     now the agent had to divide the total by the area in their head while
+     talking. Both figures come from the sheet's own columns rather than being
+     derived here — see meterPriceFinal in sheet.js — so what the agent says
+     matches the workbook the contract is written from.
+     One line per rate, list then discounted, because it is read out as a single
+     answer. bidiSafe() isolates the whole run in Arabic, so the two numbers
+     cannot swap round the arrow. */
+  const rate = (label, list, now) => {
+    if (!now) return;
+    cell(label, u.discount && list && list !== now
+      ? t('unit.rateWas', { list: fmt(list), now: fmt(now), currency: cur })
+      : t('unit.rateFlat', { now: fmt(now), currency: cur }));
+  };
+  rate(t('unit.meterPrice'), u.meterPrice, u.meterPriceFinal || u.meterPrice);
+  if (u.outdoor) rate(t('unit.meterPriceOutdoor'), u.outdoorPrice, u.outdoorPriceFinal || u.outdoorPrice);
 }
 
 /* A dropdown, not a row of cards. Six plans as cards took a whole band of the

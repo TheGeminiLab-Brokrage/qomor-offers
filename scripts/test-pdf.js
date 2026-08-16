@@ -95,8 +95,15 @@ const scope = new Function(`${load('js/arabic.js', 'js/pdf-ar.js', 'js/config.js
   const wantCode = (process.argv[2] || '').toUpperCase();
   const wantPlan = process.argv[3] || CONFIG.plans[CONFIG.plans.length - 1].id;
 
-  const res = await fetch(CONFIG.sheetUrls[0]);
-  const { units, warnings } = scope.normalizeRows(scope.parseCSV(await res.text()));
+  /* Every workbook, merged — the third floor lives in its own one, so reading
+     only the first would make a TH unit impossible to render here. */
+  const units = [], warnings = [];
+  for (const source of CONFIG.sheets) {
+    const res = await fetch(source.urls[0]);
+    const got = scope.normalizeRows(scope.parseCSV(await res.text()));
+    units.push(...got.units);
+    warnings.push(...got.warnings);
+  }
   const available = units.filter((u) => u.state === 'available');
   if (!available.length) throw new Error('no available units in the live sheet');
 
