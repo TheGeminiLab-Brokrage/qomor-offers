@@ -60,10 +60,10 @@ const MASSING = {
  * available units, this covers every Q unit a customer can currently be shown.
  * M, O and R can be produced by the same pipeline once M is confirmed.
  *
- * There is no TH floor in the inventory: the sheet has FT, SE and SP only, and
- * zero units carry a TH code. The TH entry below is kept because the drawing
- * genuinely covers both, but it holds no pins and none are expected until the
- * client explains whether a third floor exists at all.
+ * THE THIRD FLOOR IS REAL AND SELLABLE as of 2026-08-16 — it arrived in its own
+ * workbook (see CONFIG.sheets), so the old note here saying no TH units exist is
+ * gone. TH does not get its own pins: SE and TH are one drawing AND one plate,
+ * so SE's are re-keyed onto it by the loop below the table.
  */
 const PLANS = {
   SP: { image: 'assets/plans/SP.png', label: 'Sky Plaza', pins: {
@@ -334,6 +334,28 @@ const PLANS = {
   TH: { image: 'assets/plans/SETH.png', label: 'Third Floor', pins: {},
         sharedWith: 'SE', patchLabel: true },
 };
+
+/* Re-key a shared floor's pins from the floor it shares its drawing with.
+ *
+ * `sharedWith` sat here as inert data until 2026-08-16 — nothing read it — which
+ * was harmless only while TH had no inventory. It has 182 units now.
+ *
+ * Transferring the pins is sound because SE and TH are not merely one drawing,
+ * they are one PLATE. Checked against both live workbooks: the two floors carry
+ * the same 182 unit numbers, with identical areas and identical types, zero
+ * exceptions. So the point marking QSE-050 is the point that marks QTH-050.
+ * Re-keyed here rather than pasted into the table so the two floors cannot
+ * drift apart when a pin is corrected.
+ *
+ * A floor that has its own pins is left alone, which is also what stops SE and
+ * TH copying from each other forever — they name each other. */
+for (const [floorCode, plan] of Object.entries(PLANS)) {
+  const source = plan.sharedWith && PLANS[plan.sharedWith];
+  if (!source || Object.keys(plan.pins).length) continue;
+  for (const [unitCode, xy] of Object.entries(source.pins)) {
+    plan.pins[unitCode.replace(`${plan.sharedWith}-`, `${floorCode}-`)] = xy;
+  }
+}
 
 /** Every pin placed so far, for the "is this floor ready?" check in the UI. */
 function pinCount(floorCode) {
