@@ -596,7 +596,13 @@ function renderSchedule() {
   tbody.appendChild(tot);
 
   table.appendChild(tbody);
-  box.appendChild(table);
+  /* The schedule scrolls inside a box the size of the floor drawing, rather
+     than running down the page: a 10-year plan is 40 instalments plus its year
+     dividers, which pushed the Send button so far below the fold that an agent
+     had to scroll past the whole table to reach it. See .schedwrap. */
+  const scroller = el('div', 'schedwrap');
+  scroller.appendChild(table);
+  box.appendChild(scroller);
 
   /* The schedule must foot. If it ever does not, say so on screen rather than
    * letting a wrong number reach a customer. */

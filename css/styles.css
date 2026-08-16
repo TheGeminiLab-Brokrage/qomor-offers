@@ -16,6 +16,17 @@
   --good:#3DD68C;
   --warn:#FFC65A;
   --bad:#FF6B6B;
+
+  /* Layout constants, stated once because two sections are sized from them:
+     the floor drawing in step 3, and the payment schedule in step 4, which is
+     deliberately the same height (see .schedwrap). Changing the panel width or
+     the page padding here keeps the two in step by construction rather than by
+     someone remembering to update a number in both places. */
+  --page-pad:22px;
+  --page-max:1080px;
+  --unit-panel:290px;
+  --unit-gap:14px;
+  --plan-aspect:1.4155;          /* every floor drawing is 4967 x 3509 */
 }
 *{box-sizing:border-box}
 /* The dark colour is set on <html> as well as <body>. The body's gradient
@@ -93,7 +104,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .warnings li{margin:3px 0}
 
 /* ---------- steps ---------- */
-main{padding:22px;max-width:1080px;margin:0 auto}
+main{padding:var(--page-pad);max-width:var(--page-max);margin:0 auto}
 .step{margin-bottom:30px}
 .step h2{
   display:flex;align-items:center;gap:10px;margin:0 0 13px;
@@ -212,6 +223,40 @@ main{padding:22px;max-width:1080px;margin:0 auto}
 .summary span{display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
 .summary b{display:block;font-size:17px;font-weight:600;margin-top:4px}
 
+/* ---------- the schedule, boxed and scrolled ----------
+   A 10-year plan is 40 instalments plus a divider per year. Run down the page
+   it buried the Send button under a screen and a half of table, so the agent
+   scrolled past the whole schedule every time to reach the one control they
+   need. It now sits in a fixed rectangle and scrolls inside itself.
+
+   THE HEIGHT IS THE FLOOR DRAWING'S HEIGHT, on the user's instruction that the
+   two match. The drawing is `width:100%` of step 3's left grid column, so its
+   rendered height is that column's width divided by the drawing's aspect —
+   computed here from the same variables that lay step 3 out, so the two cannot
+   drift apart. Below 900px the grid collapses to one column and the drawing
+   spans the full content width, so the second rule follows it. */
+.schedwrap{
+  height:calc((min(100vw, var(--page-max)) - 2 * var(--page-pad)
+               - var(--unit-panel) - var(--unit-gap)) / var(--plan-aspect));
+  /* On a narrow phone the drawing's own height works out around 240px, which
+     is four rows once the sticky header and total have taken their share — too
+     little to read a schedule in. The floor only binds on small screens; the
+     desktop box is 517px and unaffected. */
+  min-height:320px;
+  overflow:auto;
+  overscroll-behavior:contain;   /* don't hand the scroll to the page at the end */
+  border:1px solid var(--edge);border-radius:14px;background:var(--glass);
+}
+@media (max-width:900px){
+  .schedwrap{height:calc((100vw - 2 * var(--page-pad)) / var(--plan-aspect))}
+}
+/* Sticky, and OPAQUE: over a translucent --glass the rows scroll through the
+   header and both become unreadable. --bg is the page's own solid colour. */
+.schedwrap thead th{position:sticky;top:0;z-index:2;background:#14141A}
+/* The total is the figure the customer is being asked to agree to, so it stays
+   on screen instead of living at the bottom of a scroll nobody reaches. */
+.schedwrap tr.total td{position:sticky;bottom:0;z-index:2;background:#14141A}
+
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:8px 10px;text-align:start;border-bottom:1px solid var(--edge)}
 th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
@@ -286,7 +331,10 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 .ghost.small{padding:5px 11px;font-size:11.5px}
 
 /* ---------- step 3: drawing + unit panel ---------- */
-#unitLayout{display:grid;grid-template-columns:1fr 290px;gap:14px;align-items:start}
+#unitLayout{
+  display:grid;grid-template-columns:1fr var(--unit-panel);
+  gap:var(--unit-gap);align-items:start;
+}
 @media (max-width:900px){#unitLayout{grid-template-columns:1fr}}
 
 #unitPanel{
