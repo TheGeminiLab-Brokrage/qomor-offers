@@ -26,7 +26,21 @@
   --page-max:1080px;
   --unit-panel:290px;
   --unit-gap:14px;
-  --plan-aspect:1.4155;          /* every floor drawing is 4967 x 3509 */
+  --plan-aspect:2.0441;          /* every floor drawing is 2412 x 1180 */
+
+  /* Payment schedule row metrics. These are not free numbers — .schedwrap's
+     minimum height is calculated from them so that two and a half years is
+     always visible without scrolling, so if you change the schedule's padding
+     or type size, change these to match or the guarantee quietly lapses.
+       row  = 13px text x 1.5 line-height + 5px padding top and bottom + 1px rule
+       head = 10px text x 1.5 line-height + the same padding and rule
+     Both are rounded UP from that arithmetic (30.5 -> 31, 26 -> 27) because a
+     fractional line-height rounds up when it is laid out, and erring the other
+     way clips the eleventh row — which is the one row this whole calculation
+     exists to keep on screen. Over-provisioning just shows a little more. */
+  --sched-rows:11;               /* down payment + 10 quarters = 2.5 years */
+  --sched-row:31px;
+  --sched-head:27px;
 }
 *{box-sizing:border-box}
 /* The dark colour is set on <html> as well as <body>. The body's gradient
@@ -234,15 +248,31 @@ main{padding:var(--page-pad);max-width:var(--page-max);margin:0 auto}
    rendered height is that column's width divided by the drawing's aspect —
    computed here from the same variables that lay step 3 out, so the two cannot
    drift apart. Below 900px the grid collapses to one column and the drawing
-   spans the full content width, so the second rule follows it. */
+   spans the full content width, so the second rule follows it.
+
+   THE TWO NO LONGER MATCH ON DESKTOP, as of the new client drawings 2026-08-16.
+   They are much wider and shorter than the old sheets (aspect 2.0441 against
+   1.4155), so the drawing now computes to about 358px where the schedule's
+   two-and-a-half-year floor is 399px. Both cannot hold at once, and the floor
+   wins: matching the drawing exactly would show roughly nine rows, which is the
+   scrolling problem the user asked to fix. Flagged rather than silently
+   reverted — if the matched height matters more than the eleven rows, lower
+   --sched-rows, do not remove the floor. */
 .schedwrap{
   height:calc((min(100vw, var(--page-max)) - 2 * var(--page-pad)
                - var(--unit-panel) - var(--unit-gap)) / var(--plan-aspect));
-  /* On a narrow phone the drawing's own height works out around 240px, which
-     is four rows once the sticky header and total have taken their share — too
-     little to read a schedule in. The floor only binds on small screens; the
-     desktop box is 517px and unaffected. */
-  min-height:320px;
+  /* THE FLOOR IS TWO AND A HALF YEARS, on the user's instruction 2026-08-16.
+     A customer's first question is what the next few years cost, and an agent
+     should not have to scroll a box to answer it. That is the down payment plus
+     ten quarterly instalments = 11 rows (there are no separate year-heading
+     rows — the year opens on the instalment's own row), plus the sticky header
+     and the sticky total, which do not scroll and so cannot be counted.
+
+     Written as arithmetic rather than a round number so it stays true if the
+     row metrics change: --sched-row is set from the padding and type size a few
+     rules down, and if either moves, this floor moves with it. */
+  min-height:calc(var(--sched-rows) * var(--sched-row)
+                  + var(--sched-head) + var(--sched-row));
   overflow:auto;
   overscroll-behavior:contain;   /* don't hand the scroll to the page at the end */
   border:1px solid var(--edge);border-radius:14px;background:var(--glass);
@@ -259,6 +289,18 @@ main{padding:var(--page-pad);max-width:var(--page-max);margin:0 auto}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:8px 10px;text-align:start;border-bottom:1px solid var(--edge)}
+/* The schedule's rows are tighter than the app's other tables, which is how two
+   and a half years fit without either shrinking the type — the offer was just
+   enlarged for legibility, so shrinking it back here would undo that — or
+   growing the box past the floor drawing it is deliberately matched to.
+   Keep in step with --sched-row above.
+
+   nowrap is part of the same guarantee, not a cosmetic choice: a wrapped date
+   or label makes a row two lines tall, and eleven rows would then no longer fit
+   the height calculated for them. On a phone too narrow for six columns the box
+   scrolls sideways instead, which costs a swipe and keeps the two and a half
+   years the user asked for. */
+.schedwrap th,.schedwrap td{padding:5px 10px;white-space:nowrap}
 th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
 td.num,th.num{text-align:end}
 /* The year column is narrow and quiet until a year opens on it. */
@@ -323,17 +365,50 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 }
 #planWrap[hidden]{display:none}
 #planImg{width:100%;display:block}
-#planSvg{position:absolute;inset:0;width:100%;height:100%;z-index:2}
-#planSvg .pin{
-  cursor:pointer;stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke;
-  transition:r .15s;
+#planPins{position:absolute;inset:0;z-index:2}
+/* THE BUTTON IS THE TOUCH TARGET, THE ::before IS THE DOT. They are sized
+   separately on purpose: the dot has to stay small enough to sit inside a room
+   on a drawing where a room is about 30px wide, while the target has to stay
+   big enough for a fingertip. Drawing one circle at a size that satisfies both
+   is impossible, so the button is a transparent 34px disc and only the dot is
+   painted. Sizes are in px, not a fraction of the drawing, so they do not
+   shrink with the image on a phone — which is exactly where the tap matters. */
+#planPins .pin{
+  /* The target is the dot plus a small margin — NOT a fixed 34px floor. Pins on
+     this drawing sit about 9px apart on a desktop, so a target wider than that
+     overlaps its neighbours and the tap lands on whichever pin was drawn last.
+     See CONFIG.pinDotPx for the whole trade-off. */
+  position:absolute;
+  width:calc(var(--pin-dot,7px) + 5px);height:calc(var(--pin-dot,7px) + 5px);
+  transform:translate(-50%,-50%);
+  margin:0;padding:0;border:0;background:none;cursor:pointer;
+  display:grid;place-items:center;-webkit-tap-highlight-color:transparent;
 }
-#planSvg .pin.available{fill:#1FA971}
-#planSvg .pin.reserved{fill:#E0A21C;cursor:not-allowed}
+#planPins .pin::before{
+  /* --pin-dot is set from CONFIG.pinDotPx at startup; the fallback keeps the
+     pins visible if that ever fails to apply. */
+  content:'';width:var(--pin-dot,13px);height:var(--pin-dot,13px);border-radius:50%;
+  border:1.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55);
+  transition:width .15s,height .15s;
+}
+#planPins .pin.available::before{background:#1FA971}
+#planPins .pin.reserved{cursor:not-allowed}
+#planPins .pin.reserved::before{background:#E0A21C}
 /* Sold is RED, never grey — grey reads as "not released". */
-#planSvg .pin.sold{fill:#D93B3B;cursor:not-allowed}
-#planSvg .pin.available:hover{r:.014}
-#planSvg .pin.on{fill:#FF9E3D;stroke:#1A0E02;stroke-width:2.5}
+#planPins .pin.sold{cursor:not-allowed}
+#planPins .pin.sold::before{background:#D93B3B}
+/* Hover and selection grow from whatever size the dot is set to, so a bigger
+   --pin-dot does not make the highlight smaller than the dot itself. */
+#planPins .pin.available:hover::before{
+  width:calc(var(--pin-dot,13px) + 4px);height:calc(var(--pin-dot,13px) + 4px);
+}
+#planPins .pin.on::before{
+  background:#FF9E3D;border-color:#1A0E02;border-width:2.5px;
+  width:calc(var(--pin-dot,13px) + 6px);height:calc(var(--pin-dot,13px) + 6px);
+}
+/* Keyboard focus must be visible — the pins are real buttons and tabbable. */
+#planPins .pin:focus-visible{outline:none}
+#planPins .pin:focus-visible::before{box-shadow:0 0 0 3px var(--amber-soft)}
 
 .legend .spacer{flex:1}
 .ghost.small{padding:5px 11px;font-size:11.5px}

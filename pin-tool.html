@@ -20,8 +20,21 @@ select{background:#111;color:#fff;border:1px solid var(--edge);border-radius:9px
 #frame img{width:100%;display:block;user-select:none;-webkit-user-drag:none}
 #draw{position:absolute;inset:0;width:100%;height:100%}
 #draw circle{stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke}
-#draw circle.done{fill:#1FA971}
+/* Same colours as the app, so what is placed here is what ships: green
+   available, yellow reserved. Sold is shown here only — the app hides it —
+   because a pin still has to be placed on a sold unit, ready for the day the
+   sheet frees it. */
+#draw circle.available{fill:#1FA971}
+#draw circle.reserved{fill:#E0A21C}
+#draw circle.sold{fill:#D93B3B}
 #draw circle.cur{fill:#FF9E3D;stroke:#1A0E02;stroke-width:2.5}
+/* The focus shape: the region that stays SHARP on the PDF floor page while the
+   rest of the drawing is faded back. */
+#draw polygon.focus{fill:rgba(255,158,61,.13);stroke:#FF9E3D;stroke-width:2;
+  vector-effect:non-scaling-stroke;stroke-dasharray:8 5}
+#draw circle.fpt{fill:#FF9E3D;stroke:#1A0E02;stroke-width:1.5;vector-effect:non-scaling-stroke}
+#draw circle.fpt.last{fill:#fff}
+#bar button.armed{background:rgba(255,158,61,.25);color:#FFC27A;border-color:#FF9E3D}
 #draw text{font:600 .012px sans-serif;fill:#fff;paint-order:stroke;stroke:#000;stroke-width:.004px;text-anchor:middle}
 aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-height:0;background:rgba(0,0,0,.25)}
 #queue{overflow:auto;flex:1;padding:10px 14px;min-height:0}
@@ -57,6 +70,14 @@ aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-h
   <button class="ghost small" id="btnUndo" type="button">Undo last</button>
   <button class="ghost small" id="btnSkip" type="button">Skip unit</button>
   <button class="ghost small" id="btnClear" type="button">Clear this floor</button>
+  <button class="ghost small" id="btnSeed" type="button">Seed from plan.js</button>
+  <button class="ghost small" id="btnFocus" type="button">Trace Q focus shape</button>
+  <button class="ghost small" id="btnFocusClear" type="button" hidden>Clear shape</button>
+  <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim)">
+    Dot size
+    <input id="dotSize" type="range" min="6" max="40" step="1" value="13" style="width:120px">
+    <b id="dotVal" style="color:var(--ink);min-width:74px">13 px</b>
+  </label>
   <span class="spacer" style="flex:1"></span>
   <span id="progress" style="font-size:12.5px;color:var(--dim)"></span>
 </div>
@@ -65,7 +86,12 @@ aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-h
   <div id="stage">
     <div id="frame">
       <img id="plan" alt="floor plan">
-      <svg id="draw" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      <!-- viewBox in DRAWING PIXELS, not a 0..1 box. With viewBox="0 0 1 1"
+           and preserveAspectRatio="none" every circle is stretched by the
+           drawing's aspect — on these 2.04:1 plans a pin came out as a flat
+           ellipse. In pixel units the circles stay round and radii take
+           natural values. Set from the image's own size once it loads. -->
+      <svg id="draw" viewBox="0 0 2412 1180"></svg>
     </div>
   </div>
   <aside>
@@ -104,23 +130,75 @@ var store = {
 var pins = store.load();          // { floorCode: { CODE: [x,y] } }
 var units = [], cur = 0, floorCode = null, buildingId = null;
 
+/* Building Q's focus SHAPE — the region the PDF keeps sharp while the rest of
+   the drawing fades back.
+
+   A traced outline, not a rectangle: Q wraps the courtyard, so any box around it
+   drags the courtyard in with it. Clicked point by point so it can follow the
+   real edge.
+   ONE shape for Q, used on every floor, on the user's instruction 2026-08-17 —
+   Q sits in the same place on all four drawings. The other buildings are left
+   on their pin bounding box, which is fine for a simple bar. */
+var FKEY = 'qomor.focus.v2';
+var focusShape = (function () {
+  try { return JSON.parse(localStorage.getItem(FKEY)) || []; } catch (e) { return []; }
+})();
+var focusMode = false;
+function setFocusMode(on) {
+  focusMode = on;
+  var b = document.getElementById('btnFocus');
+  b.classList.toggle('armed', on);
+  b.textContent = on ? 'Finish shape (' + focusShape.length + ' pts)' : 'Trace Q focus shape';
+  document.getElementById('btnFocusClear').hidden = !on;
+}
+
 var frame = document.getElementById('frame');
 var draw = document.getElementById('draw');
 var img = document.getElementById('plan');
 var loupe = document.getElementById('loupe');
 var ZOOM = 4, LOUPE = 190;
 
+/* Drawing size in its own pixels. Read off the image once it loads rather than
+   hard-coded, so swapping a drawing for one of a different size cannot silently
+   distort every pin — which is exactly what the old 0..1 viewBox did. */
+var W = 2412, H = 1180;
+var dotPx = 13;
+
 function q() { return units.filter(function (u) { return true; }); }
 function pinsFor() { return (pins[floorCode] = pins[floorCode] || {}); }
 
+/* Pin radius in DRAWING pixels that will look like `dotPx` on screen. The
+   drawing is displayed at frame width, so one screen pixel is W/frameWidth
+   drawing pixels — without this conversion the slider would mean something
+   different at every window size and on every zoom level. */
+function radiusUnits() {
+  var shown = frame.getBoundingClientRect().width || W;
+  return (dotPx / 2) * (W / shown);
+}
+
 function render() {
-  var p = pinsFor(), s = '';
+  var p = pinsFor(), s = '', r = radiusUnits();
   units.forEach(function (u, i) {
     var xy = p[u.code];
     if (!xy) return;
-    s += '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (i === cur ? 0.012 : 0.008) +
-         '" class="' + (i === cur ? 'cur' : 'done') + '"/>';
+    /* Stored as fractions (what plan.js wants), drawn in pixels (what keeps
+       the circle round) — so multiply on the way out, divide on the way in. */
+    s += '<circle cx="' + (xy[0] * W) + '" cy="' + (xy[1] * H) + '" r="' +
+         (i === cur ? r * 1.45 : r) + '" class="' +
+         (i === cur ? 'cur' : (u.state || 'sold')) + '"/>';
   });
+  /* The traced shape: the closed outline plus a dot on every point, so a
+     misplaced one is obvious and can be taken back with Backspace. */
+  if (focusShape.length) {
+    var pts = focusShape.map(function (p) { return (p[0] * W) + ',' + (p[1] * H); }).join(' ');
+    s += '<polygon class="focus" points="' + pts + '"/>';
+    if (focusMode) {
+      s += focusShape.map(function (p, i) {
+        return '<circle class="fpt' + (i === focusShape.length - 1 ? ' last' : '') +
+               '" cx="' + (p[0] * W) + '" cy="' + (p[1] * H) + '" r="' + (r * 0.9) + '"/>';
+      }).join('');
+    }
+  }
   draw.innerHTML = s;
 
   var qbox = document.getElementById('queue');
@@ -140,6 +218,7 @@ function render() {
   document.getElementById('progress').textContent = done + ' of ' + units.length + ' placed';
   document.getElementById('out').value = emit();
   store.save(pins);
+  try { localStorage.setItem(FKEY, JSON.stringify(focusShape)); } catch (e) {}
 }
 
 function emit() {
@@ -147,7 +226,14 @@ function emit() {
   var lines = units.filter(function (u) { return p[u.code]; }).map(function (u) {
     return "    '" + u.code + "': [" + p[u.code][0] + ', ' + p[u.code][1] + '],';
   });
-  return 'PLANS.' + floorCode + '.pins = {\n' + lines.join('\n') + '\n};';
+  var out = 'PLANS.' + floorCode + '.pins = {\n' + lines.join('\n') + '\n};';
+
+  if (focusShape.length >= 3) {
+    out += '\n\n/* Building Q, every floor. */\nconst Q_FOCUS = [\n' +
+      focusShape.map(function (p) { return '  [' + p[0] + ', ' + p[1] + '],'; }).join('\n') +
+      '\n];';
+  }
+  return out;
 }
 
 frame.addEventListener('click', function (e) {
@@ -156,6 +242,17 @@ frame.addEventListener('click', function (e) {
   var x = +((e.clientX - r.left) / r.width).toFixed(4);
   var y = +((e.clientY - r.top) / r.height).toFixed(4);
   if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+  /* Tracing the focus shape: every click adds a point and NOTHING else. The
+     unit queue must not advance here — mixing the two is what made the first
+     version of this unusable. */
+  if (focusMode) {
+    focusShape.push([x, y]);
+    setFocusMode(true);           // refresh the point count on the button
+    render();
+    return;
+  }
+
   pinsFor()[units[cur].code] = [x, y];
   if (cur < units.length - 1) cur++;
   render();
@@ -185,6 +282,44 @@ document.getElementById('btnClear').onclick = function () {
   if (!confirm('Clear every pin on ' + floorCode + '?')) return;
   pins[floorCode] = {}; cur = 0; render();
 };
+
+/* Correcting a nearly-right pin is far faster than placing one from nothing,
+   so start from whatever plan.js already ships for this floor. Only fills the
+   gaps — it never overwrites a pin placed here, because that pin is the newer
+   decision. */
+document.getElementById('btnFocus').onclick = function () {
+  setFocusMode(!focusMode);
+  render();
+};
+document.getElementById('btnFocusClear').onclick = function () {
+  focusShape.length = 0;
+  setFocusMode(true);
+  render();
+};
+
+document.getElementById('btnSeed').onclick = function () {
+  var have = pinsFor(), plan = PLANS[floorCode], added = 0;
+  if (!plan) return;
+  Object.keys(plan.pins).forEach(function (code) {
+    if (!have[code]) { have[code] = plan.pins[code].slice(); added++; }
+  });
+  cur = 0;
+  for (var i = 0; i < units.length; i++) { if (!have[units[i].code]) { cur = i; break; } }
+  render();
+  alert(added ? ('Seeded ' + added + ' pin' + (added === 1 ? '' : 's') + ' from plan.js.')
+              : 'Nothing to seed — every pin plan.js has is already placed here.');
+};
+
+/* The slider is a preview of CONFIG.pinDotPx, in the same screen pixels the app
+   uses, shown against the real drawing so the size can be judged where it will
+   actually be read rather than guessed in the stylesheet. */
+var slider = document.getElementById('dotSize'), dotVal = document.getElementById('dotVal');
+dotPx = (typeof CONFIG !== 'undefined' && CONFIG.pinDotPx) || 13;
+slider.value = dotPx;
+function showDot() { dotVal.textContent = dotPx + ' px'; }
+showDot();
+slider.oninput = function () { dotPx = +this.value; showDot(); render(); };
+window.addEventListener('resize', function () { render(); });
 document.getElementById('btnCopy').onclick = function () {
   var t = document.getElementById('out');
   t.select();
@@ -201,6 +336,18 @@ document.getElementById('btnLoad').onclick = function () {
 };
 document.addEventListener('keydown', function (e) {
   if (e.target.tagName === 'TEXTAREA') return;
+  /* While tracing, Backspace takes back a POINT. Without this it reached the
+     pin undo and quietly deleted a unit's pin instead — the same crossing of
+     the two modes that made the first version unusable. */
+  if (focusMode) {
+    if (e.key === 'Backspace') {
+      e.preventDefault(); focusShape.pop(); setFocusMode(true); render();
+    }
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault(); setFocusMode(false); render();
+    }
+    return;
+  }
   if (e.key === 'Backspace') { e.preventDefault(); document.getElementById('btnUndo').click(); }
   if (e.key === 'ArrowRight') { e.preventDefault(); document.getElementById('btnSkip').click(); }
   if (e.key === 'ArrowLeft' && cur > 0) { e.preventDefault(); cur--; render(); }
@@ -211,6 +358,13 @@ function pick() {
   floorCode = document.getElementById('selFloor').value;
   var plan = PLANS[floorCode];
   img.src = plan ? plan.image : '';
+  /* Match the SVG to the drawing's real pixel size, so circles stay round
+     whatever aspect the next set of drawings arrives in. */
+  img.onload = function () {
+    W = img.naturalWidth || W; H = img.naturalHeight || H;
+    draw.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    render();
+  };
   units = ALL.filter(function (u) { return u.building === buildingId && u.floorCode === floorCode; })
               .sort(function (a, b) { return a.unit - b.unit; });
   cur = 0;

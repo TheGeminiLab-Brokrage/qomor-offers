@@ -40,6 +40,46 @@ const LINE      = [218, 226, 233];
 const PAPER     = [255, 255, 255];
 const ON_NAVY   = [198, 210, 222];        // body text on a navy field
 const ON_NAVY_2 = [152, 170, 188];        // and its quieter second rank
+/* The unit-code tag on the floor page. A step darker than the pin's own red so
+ * white text on it clears AA at 8.2pt — the pin colour [214,64,52] is only
+ * 3.9:1 against white, which is too thin for type this small. */
+const TAG_RED   = [158, 34, 28];
+/* How far back the buildings that do not carry the unit are pushed on the floor
+ * page. Low enough that the customer's building is unmistakably the subject,
+ * high enough that the rest still reads as a plan rather than a smudge — the
+ * point is to show where the unit sits in the project, which needs the
+ * surrounding wings to stay recognisable. */
+const PLAN_FADED = 0.3;
+
+/**
+ * Outlines of the area to keep sharp on the floor page, per building, as
+ * fractions of the drawing — the same coordinate space the pins use.
+ *
+ * ONE shape per building, used on EVERY floor: a building sits in the same
+ * place on all four drawings, so tracing it once is enough. Traced by hand in
+ * pin-tool.html ("Trace Q focus shape"), which prints this array.
+ *
+ * A building with no entry here falls back to the bounding box of its own pins,
+ * which is accurate enough for the straight bars — M, O and R. Q is the one
+ * that needs a shape, because it wraps the courtyard and a box around it keeps
+ * the courtyard sharp inside an otherwise faded drawing.
+ */
+const FOCUS_SHAPES = {
+  /* Traced by the user 2026-08-17. The L follows Q's outer edge: down the left
+     side, along the top, back down the inner face at x≈0.288 — which is what
+     keeps the COURTYARD outside the shape and fading with everything else —
+     then out to x≈0.355 for the lower bar and back along the bottom. */
+  Q: [
+    [0.0555, 0.1607],
+    [0.2877, 0.1572],
+    [0.2877, 0.3801],
+    [0.2894, 0.5379],
+    [0.3533, 0.5379],
+    [0.3550, 0.7642],
+    [0.3533, 0.7677],
+    [0.0555, 0.7642],
+  ],
+};
 
 /**
  * The brand typefaces — set by registerFonts() once the document exists.
@@ -554,6 +594,26 @@ function clipTo(doc, x, y, w, h) {
 }
 
 /**
+ * Clip to a traced outline instead of a box.
+ *
+ * Building Q wraps a courtyard, so any rectangle that contains it also contains
+ * the courtyard — which then stayed at full strength inside a faded drawing and
+ * read as a bright patch. The shape is traced by hand in the pin tool.
+ *
+ * `null` as the style is the same trap clipTo() documents: jsPDF's default 'S'
+ * emits a stroke, which ENDS the path, and the following clip then applies to
+ * nothing. Points are fractions of the image, mapped through the placed rect.
+ */
+function clipToShape(doc, shape, rect) {
+  const pts = shape.map(([fx, fy]) => [rect.x + fx * rect.w, rect.y + fy * rect.h]);
+  doc.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) doc.lineTo(pts[i][0], pts[i][1]);
+  doc.lineTo(pts[0][0], pts[0][1]);
+  doc.clip();
+  doc.discardPath();
+}
+
+/**
  * A soft scrim under type that sits on a render, densest at the foot.
  *
  * jsPDF has no gradient fills, and a single translucent rectangle leaves a hard
@@ -802,7 +862,7 @@ function clipPolygon(doc, pts, rect) {
  * @returns {{cx:number, cy:number, cw:number, ch:number}|null} centre and size,
  *          in image pixels.
  */
-function buildingCrop(planDef, bId, img) {
+function buildingBounds(planDef, bId) {
   const pins = Object.keys(planDef.pins || {})
     .filter((code) => code.slice(0, bId.length) === bId)
     .map((code) => planDef.pins[code]);
@@ -815,23 +875,20 @@ function buildingCrop(planDef, bId, img) {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x);
     y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
-  /* Padding is half a room, no more: a room on this sheet is about 1.5% of the
-     image width, and a generous 3.5% pulled the next building's rooms into the
-     crop where the mask then sliced them in half. */
+  /* Padding is half a room. Sideways a room is about 1.5% of the image width
+     and a generous 3.5% pulled the next building's rooms into the crop, where
+     the mask then sliced them in half — so x stays tight.
+
+     y needs more than it did: a pin sits at the middle of its room, and a room
+     is about 7% of the image height, so half of one is 0.035. The old 0.022
+     was tuned when the pins came from OCR label centres, which sat lower in
+     the room; the hand-placed pins are centred, and 0.022 clipped the top and
+     bottom rows off the crop. Vertically there is nothing to collide with —
+     Q's outer rows are at the edge of the plate. */
   x0 = Math.max(0, x0 - 0.014); x1 = Math.min(1, x1 + 0.014);
-  y0 = Math.max(0, y0 - 0.022); y1 = Math.min(1, y1 + 0.022);
+  y0 = Math.max(0, y0 - 0.035); y1 = Math.min(1, y1 + 0.035);
 
-  let cw = (x1 - x0) * img.width;
-  let ch = (y1 - y0) * img.height;
-  const cx = ((x0 + x1) / 2) * img.width;
-  const cy = ((y0 + y1) / 2) * img.height;
-
-  /* A building with tightly clustered pins would be magnified past the
-     resolution the drawing was exported at. Hold it to a fifth of the sheet. */
-  const floor = img.width * 0.2;
-  if (cw < floor) { ch *= floor / cw; cw = floor; }
-
-  return { cx, cy, cw, ch };
+  return { x0, y0, x1, y1 };
 }
 
 /**
@@ -1343,45 +1400,63 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
       /* Zoom to the customer's own building where the pins allow it, and show
          the whole sheet where they do not. Either way the placed image is
          described by the same rect, so the pin maths below is shared. */
-      const crop = buildingCrop(planDef, bId, planImg);
-      let rect;
-      if (crop) {
-        const scale = Math.min(iw / crop.cw, ih / crop.ch);
-        rect = { w: planImg.width * scale, h: planImg.height * scale };
-        rect.x = M + iw / 2 - crop.cx * scale;
-        rect.y = iy + ih / 2 - crop.cy * scale;
-      } else {
-        rect = containRect(planImg, M, iy, iw, ih);
-      }
+      /* THE WHOLE LAYOUT, with the other buildings faded back.
+       *
+       * This page used to crop to the customer's building and mask the rest
+       * away with white rectangles, so it showed one wing floating with no
+       * sense of where in the project it sat. On the user's instruction
+       * 2026-08-17 the whole plate is now drawn and the buildings that do not
+       * carry the unit are simply quieter — the customer sees the project and
+       * their own place inside it.
+       *
+       * TWO PASSES OVER ONE EMBEDDED IMAGE. jsPDF looks images up by alias, so
+       * passing the same alias both times reuses the bytes already embedded and
+       * the second pass costs nothing. Leave the alias off and the drawing is
+       * embedded twice — about a megabyte onto every offer, over WhatsApp.
+       *
+       * Faded first, then again at full strength clipped to the building's own
+       * box. A translucent white veil painted over the top would have been
+       * simpler and is wrong: it would wash out the customer's building too,
+       * unless a hole were cut in it, which is the same clip by a longer road.
+       *
+       * Not rotated. The unit numbers are printed into the raster, so turning
+       * the drawing to match the render's orientation turns all 182 of them
+       * upside down. Confirmed with the user before this shipped; getting both
+       * needs a re-export from OY Studio with the text set upright. */
+      /* THE WHOLE IMAGE, roads and all — exactly the drawing the app shows.
+         An earlier version fitted only the plate (the union of the pins) to win
+         back the third of the image that is road, pavement and trees, which
+         made the unit numbers bigger. The user asked for the full frame
+         instead, on 2026-08-17: the surroundings are part of how the project
+         reads, and the app and the offer should show the same picture. */
+      const rect = containRect(planImg, M, iy, iw, ih);
+      const alias = `plan-${unit.floorCode}`;
 
       doc.saveGraphicsState();
       clipTo(doc, M, iy, iw, ih);
-      doc.addImage(planImg.data, planImg.format, rect.x, rect.y, rect.w, rect.h, undefined, 'FAST');
 
-      /* Mask everything outside the crop box.
+      doc.setGState(new doc.GState({ opacity: PLAN_FADED }));
+      doc.addImage(planImg.data, planImg.format, rect.x, rect.y, rect.w, rect.h, alias, 'FAST');
+      doc.setGState(new doc.GState({ opacity: 1 }));
+
+      /* A traced shape wins over the pins' bounding box.
        *
-       * Containing the crop is not the same as isolating it: the frame is wider
-       * than Q is, so the neighbouring building stayed in shot, half cut off,
-       * looking like a mistake rather than context. These four rectangles trim
-       * it back to the customer's own building. Painting white over a drawing
-       * that is itself on white paper is invisible — but note the order, which
-       * is the trap this file has been bitten by before: masks go down straight
-       * after the image and BEFORE the pin, never over finished artwork. */
-      if (crop) {
-        const scale = rect.w / planImg.width;
-        const bx = rect.x + (crop.cx - crop.cw / 2) * scale;
-        const by = rect.y + (crop.cy - crop.ch / 2) * scale;
-        const bw = crop.cw * scale, bh = crop.ch * scale;
-        /* Overscanned by a millimetre on every outer edge. Sized exactly to the
-           frame they left a hairline of drawing along it, because the mask and
-           the clip round to device pixels independently; the clip discards the
-           overspill anyway. */
-        const O = 1;
-        setFill(doc, PAPER);
-        doc.rect(M - O, iy - O, Math.max(0, bx - M + O), ih + 2 * O, 'F');
-        doc.rect(bx + bw, iy - O, Math.max(0, M + iw - bx - bw + O), ih + 2 * O, 'F');
-        doc.rect(M - O, iy - O, iw + 2 * O, Math.max(0, by - iy + O), 'F');
-        doc.rect(M - O, by + bh, iw + 2 * O, Math.max(0, iy + ih - by - bh + O), 'F');
+       * The pins only bound the ROOMS, so the box they give stops at the middle
+       * of the outermost ones and misses walls, corridors and anything
+       * unpinned — and for a building that wraps a courtyard a box is the wrong
+       * figure entirely. FOCUS_SHAPES holds the outlines traced by hand; every
+       * other building falls back to its pins, which is fine for a plain bar. */
+      const shape = FOCUS_SHAPES[bId];
+      const bounds = shape ? null : buildingBounds(planDef, bId);
+      const highlighted = !!(shape || bounds);
+      if (highlighted) {
+        doc.saveGraphicsState();
+        if (shape) clipToShape(doc, shape, rect);
+        else clipTo(doc,
+          rect.x + bounds.x0 * rect.w, rect.y + bounds.y0 * rect.h,
+          (bounds.x1 - bounds.x0) * rect.w, (bounds.y1 - bounds.y0) * rect.h);
+        doc.addImage(planImg.data, planImg.format, rect.x, rect.y, rect.w, rect.h, alias, 'FAST');
+        doc.restoreGraphicsState();
       }
 
       const pin = planDef.pins && planDef.pins[unit.code];
@@ -1398,12 +1473,39 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
         setFill(doc, PAPER);
         doc.circle(px, py, 0.7, 'F');
 
-        /* Flip the label to the other side of the pin near the right edge —
-           the drawing is clipped to the frame and the code would be cut off. */
-        doc.setFont(SANS, 'bold').setFontSize(7.6);
-        setText(doc, INK);
-        const flip = px + 8 + doc.getTextWidth(unit.code) > M + iw - 2;
-        doc.text(unit.code, flip ? px - 8 : px + 8, py + 1, flip ? { align: 'right' } : undefined);
+        /* The code as a CALLOUT, not loose text beside the pin — the client's
+           reference for this page. Loose text sat on top of the drawing's own
+           room numbers and was hard to pick out; a filled tag with a tail
+           reads as a label pointing at something, at any print size.
+
+           It floats ABOVE the pin and is clamped to the frame, so it can never
+           be clipped the way the old right-edge flip existed to prevent. If
+           the pin is close to the top of the frame the tag goes below it and
+           the tail flips with it. */
+        doc.setFont(SANS, 'bold').setFontSize(8.2);
+        const label = unit.code;
+        const tw = doc.getTextWidth(label);
+        const padX = 3.4, tagH = 6.6, tail = 2.4, gap = 1.2;
+        const tagW = tw + padX * 2;
+
+        const below = py - (gap + tail + tagH) < rect.y + 1;
+        const tagY = below ? py + gap + tail : py - gap - tail - tagH;
+        /* Centre on the pin, then push back inside the frame if that overflows.
+           The tail stays on the PIN, not on the tag's centre, so a clamped tag
+           still points at the right room. */
+        let tagX = px - tagW / 2;
+        tagX = Math.max(M + 1, Math.min(tagX, M + iw - tagW - 1));
+
+        setFill(doc, TAG_RED);
+        doc.roundedRect(tagX, tagY, tagW, tagH, 1.6, 1.6, 'F');
+        /* Tail: a short triangle from the tag edge to the pin. Drawn after the
+           box and in the same colour so the seam between them disappears. */
+        const tx = Math.max(tagX + 2.2, Math.min(px, tagX + tagW - 2.2));
+        if (below) doc.triangle(tx - 1.9, tagY, tx + 1.9, tagY, px, py + gap, 'F');
+        else doc.triangle(tx - 1.9, tagY + tagH, tx + 1.9, tagY + tagH, px, py - gap, 'F');
+
+        setText(doc, PAPER);
+        doc.text(label, tagX + tagW / 2, tagY + tagH / 2 + 1.45, { align: 'center' });
       }
       doc.restoreGraphicsState();
 
@@ -1411,8 +1513,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
       setText(doc, MUTED);
       const planLabel = D('floor', planDef.label);
       tStart(doc, pin
-        ? S('floor.pinned', { prefix: crop ? `${bName}، ` : '', plan: planLabel, code: unit.code },
-            `${crop ? `${bName}, ` : ''}${planDef.label}. Unit ${unit.code} is marked on the drawing.`)
+        /* Name the building whenever one was actually brought forward, by a
+           traced shape OR by its pins — otherwise the caption either claims a
+           highlight the page does not show, or fails to name the one it does. */
+        ? S('floor.pinned', { prefix: highlighted ? `${bName}، ` : '', plan: planLabel, code: unit.code },
+            `${highlighted ? `${bName}, ` : ''}${planDef.label}. Unit ${unit.code} is marked on the drawing.`)
         : S('floor.unpinned', { plan: planLabel, code: unit.code },
             `Drawing of the ${planDef.label}. The exact position of ${unit.code} is confirmed on the stamped layout.`),
         M, 182);

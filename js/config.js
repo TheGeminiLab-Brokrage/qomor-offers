@@ -90,6 +90,32 @@ const CONFIG = {
   availableStatuses: ['available'],
   reservedStatuses: ['hold', 'booked'],
 
+  /* ------------------------------------------------------------ plan pins --
+   * How big the dot on the floor plan is, in screen pixels, measured across
+   * (its diameter). CHANGE THIS ONE NUMBER to resize every pin in the app.
+   *
+   * 7, not 13. At 13 the dots were wider than the rooms under them: the drawing
+   * is 2412px shown in about 730px, so a room roughly 30px wide on the drawing
+   * lands at about 9px on screen. A 13px dot with a 34px tap target therefore
+   * covered three or four units at once and selecting a particular one was
+   * guesswork — the client's report, and confirmed by the arithmetic.
+   *
+   * The tap target is now the dot plus a few pixels rather than a 34px floor,
+   * for the same reason: a target wider than the spacing between two pins hands
+   * the tap to whichever pin was drawn last, not the one under the finger.
+   * The trade is real — this is now mouse-precise rather than finger-precise,
+   * and on a phone the unit list beside the drawing is the reliable way to
+   * choose. Fixing that properly means letting the drawing zoom, not making the
+   * dots bigger.
+   *
+   * The pin tool has a slider that previews any value against the real drawing
+   * and prints the number to paste back here.
+   *
+   * Sizes are in px rather than a fraction of the drawing so they hold steady
+   * on a phone, where the drawing shrinks but the finger does not. Diameters,
+   * not radii, because that is what the tool shows. */
+  pinDotPx: 7,
+
   /* --------------------------------------------------------------- pricing --
    * Verified against all 530 rows of the Availabilty tab, zero exceptions:
    *     Area          = <the sheet's own smaller area column> x LOAD_FACTOR

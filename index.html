@@ -119,17 +119,25 @@
          by number rather than by eye. Two routes to the same selectUnit(). -->
     <div id="unitLayout">
       <div>
-        <!-- Only available units are shown anywhere in this app, so the legend
-             has one entry. A unit that is not for sale has no business showing
-             its price to a customer sitting beside the agent. -->
+        <!-- The plan shows available and reserved; everywhere else in the app
+             still shows available only. A reserved pin carries its status, not
+             a price — a unit that is not for sale has no business showing its
+             price to a customer sitting beside the agent. -->
         <div class="legend">
-          <span><i class="sw available"></i><span data-i18n="plan.legend">Available units only</span></span>
+          <span><i class="sw available"></i><span data-i18n="plan.legend">Available</span></span>
+          <span><i class="sw reserved"></i><span data-i18n="plan.legendHeld">Reserved</span></span>
         </div>
         <!-- Sold pins are RED: a grey "sold" reads too close to a grey
              "not released". -->
         <div id="planWrap">
           <img id="planImg" alt="">
-          <svg id="planSvg" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+          <!-- Pins are positioned buttons, not SVG. The new drawings are
+               2.04:1, and the old SVG overlay stretched to fit with
+               preserveAspectRatio="none", which squashed every circle into a
+               13x6px ellipse — unreadable as a dot and far too small to tap.
+               A button placed at left/top percentages stays round at any
+               aspect and keeps a fixed-size touch target. -->
+          <div id="planPins"></div>
           <div id="planTip"><b></b><i></i></div>
         </div>
         <p class="empty" id="planNote" hidden></p>

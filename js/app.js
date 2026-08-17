@@ -147,6 +147,23 @@ function sellable(buildingId, floorCode) {
   return unitsIn(buildingId, floorCode).filter((u) => u.state === 'available');
 }
 
+/* What the FLOOR PLAN shows: available and reserved, never sold.
+ *
+ * This is a deliberate exception to the rule above, on the user's instruction
+ * 2026-08-16 — green for available, yellow for reserved. The rule it bends is
+ * the one about prices, and that still holds: a reserved pin shows its status
+ * ("Hold", "Booked") where an available one shows a price, so nothing a
+ * customer should not see appears next to a unit they cannot buy. A reserved
+ * pin is also not selectable, so it cannot reach an offer.
+ *
+ * Sold units stay absent entirely. Showing every sold unit would bury the few
+ * available ones on a floor that is 90% sold, which is the opposite of what
+ * the plan is for. */
+function plannable(buildingId, floorCode) {
+  return unitsIn(buildingId, floorCode)
+    .filter((u) => u.state === 'available' || u.state === 'reserved');
+}
+
 /* The masterplan render. Polygons are drawn once; their classes are updated on
  * every refresh so availability on the render always matches the sheet. */
 let heroBuilt = false;
@@ -303,8 +320,8 @@ function selectFloor(code) {
  * list when this floor has no pins placed yet, so the app is always usable. */
 function renderPlan() {
   const plan = PLANS[state.floorCode];
-  const wrap = $('planWrap'), svg = $('planSvg'), note = $('planNote');
-  const mine = sellable(state.buildingId, state.floorCode);
+  const wrap = $('planWrap'), svg = $('planPins'), note = $('planNote');
+  const mine = plannable(state.buildingId, state.floorCode);
   const pinned = mine.filter((u) => plan && plan.pins[u.code]);
 
   /* Always show the drawing when one exists, even with no pins on it yet.
@@ -328,28 +345,56 @@ function renderPlan() {
   svg.innerHTML = '';
   for (const u of pinned) {
     const [x, y] = plan.pins[u.code];
-    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    c.setAttribute('cx', x); c.setAttribute('cy', y);
-    /* Radius in viewBox units — the viewBox is 1 unit wide, so a radius in
-     * pixels here would paint a disc wider than the whole drawing. */
-    c.setAttribute('r', 0.009);
-    c.setAttribute('class', 'pin ' + u.state + (state.unit && state.unit.code === u.code ? ' on' : ''));
-    c.addEventListener('pointerenter', () => {
-      const tip = $('planTip');
-      tip.querySelector('b').textContent = u.code;
-      tip.querySelector('i').textContent =
-        `${u.area != null ? u.area + ' m²' : ''} · ${u.state === 'available' ? fmt(u.price) + ' ' + td('currency', CONFIG.currency) : u.status}`;
-      tip.className = 'on' + (u.state === 'available' ? '' : ' off');
-      const r = $('planWrap').getBoundingClientRect();
-      const b = c.getBoundingClientRect();
-      tip.style.left = (b.left + b.width / 2 - r.left) + 'px';
-      tip.style.top = (b.top - r.top) + 'px';
+    const b = el('button', 'pin ' + u.state
+      + (state.unit && state.unit.code === u.code ? ' on' : ''));
+    b.type = 'button';
+    /* Percentages, so the pin tracks the drawing at any display size. x and y
+       are already fractions of the image's width and height. */
+    b.style.left = (x * 100) + '%';
+    b.style.top = (y * 100) + '%';
+    b.setAttribute('aria-label', tipText(u));
+    b.addEventListener('pointerenter', () => showTip(u, b));
+    /* Only a mouse leaving should dismiss it. A touch fires pointerleave the
+       moment the finger lifts, which would hide the details the tap was for. */
+    b.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') hideTip(); });
+    b.addEventListener('click', () => {
+      /* Tap shows the details, on every device: the tooltip for the figure the
+         agent is pointing at, and the panel below for everything else. A sold
+         or held unit still says what it is — it just cannot be selected. */
+      showTip(u, b);
+      if (u.state === 'available') selectUnit(u.code);
     });
-    c.addEventListener('pointerleave', () => { $('planTip').className = ''; });
-    if (u.state === 'available') c.addEventListener('click', () => selectUnit(u.code));
-    svg.appendChild(c);
+    svg.appendChild(b);
   }
 }
+
+/** One line of unit detail, shared by the tooltip and the pin's accessible name. */
+function tipText(u) {
+  const money = u.state === 'available'
+    ? fmt(u.price) + ' ' + td('currency', CONFIG.currency) : u.status;
+  return `${u.code} · ${u.area != null ? u.area + ' m² · ' : ''}${money}`;
+}
+
+function showTip(u, pinEl) {
+  const tip = $('planTip');
+  tip.querySelector('b').textContent = u.code;
+  tip.querySelector('i').textContent =
+    `${u.area != null ? u.area + ' m²' : ''} · ${u.state === 'available'
+      ? fmt(u.price) + ' ' + td('currency', CONFIG.currency) : u.status}`;
+  tip.className = 'on' + (u.state === 'available' ? '' : ' off');
+  const r = $('planWrap').getBoundingClientRect();
+  const p = pinEl.getBoundingClientRect();
+  tip.style.left = (p.left + p.width / 2 - r.left) + 'px';
+  tip.style.top = (p.top - r.top) + 'px';
+}
+
+function hideTip() { $('planTip').className = ''; }
+
+/* A touch has no "leave", so the tooltip is dismissed by the next tap that is
+ * not on a pin. Without this it would sit over the drawing indefinitely. */
+document.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest || !e.target.closest('#planPins .pin')) hideTip();
+}, true);
 
 /** The panel's current filter/sort, applied to this floor's units. */
 function visibleUnits() {
@@ -776,5 +821,10 @@ function openDeepLink() {
   if (planId && CONFIG.plans.some((p) => p.id === planId)) state.planId = planId;
   selectUnit(u.code);
 }
+
+/* One number in config.js sizes every pin — see CONFIG.pinDotPx. Applied once
+ * here rather than written into each pin, so the browser resizes them all
+ * together and the tap target follows via max() in the stylesheet. */
+document.documentElement.style.setProperty('--pin-dot', (CONFIG.pinDotPx || 13) + 'px');
 
 refresh().then(openDeepLink);

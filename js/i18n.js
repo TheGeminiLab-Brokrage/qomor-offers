@@ -76,7 +76,8 @@ const STRINGS = {
     'floor.none': 'None available',
     'floor.notReleased': 'Not released',
 
-    'plan.legend': 'Available units only',
+    'plan.legend': 'Available',
+    'plan.legendHeld': 'Reserved',
     'plan.alt': '{floor} plan',
     'plan.nonePinned': 'No units are pinned on the {floor} drawing yet — pick from the panel, every available unit is listed there.',
     'plan.somePinned': '{pinned} of {total} units are pinned on this drawing; the rest are in the panel.',
@@ -211,7 +212,8 @@ const STRINGS = {
     'floor.none': 'لا يوجد متاح',
     'floor.notReleased': 'لم تُطرح بعد',
 
-    'plan.legend': 'الوحدات المتاحة فقط',
+    'plan.legend': 'متاحة',
+    'plan.legendHeld': 'محجوزة',
     'plan.alt': 'رسمة {floor}',
     'plan.nonePinned': 'لا توجد وحدات محدّدة على رسمة {floor} بعد — اختر من القائمة، فكل الوحدات المتاحة مدرجة بها.',
     'plan.somePinned': '{pinned} من {total} وحدة محدّدة على الرسمة، والباقي في القائمة.',
