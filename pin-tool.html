@@ -71,7 +71,8 @@ aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-h
   <button class="ghost small" id="btnSkip" type="button">Skip unit</button>
   <button class="ghost small" id="btnClear" type="button">Clear this floor</button>
   <button class="ghost small" id="btnSeed" type="button">Seed from plan.js</button>
-  <button class="ghost small" id="btnFocus" type="button">Trace Q focus shape</button>
+  <button class="ghost small" id="btnFocus" type="button">Trace shape</button>
+  <button class="ghost small" id="btnFocusSeed" type="button" hidden>Seed shape from plan.js</button>
   <button class="ghost small" id="btnFocusClear" type="button" hidden>Clear shape</button>
   <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim)">
     Dot size
@@ -106,6 +107,18 @@ aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-h
         this browser as you go. Paste the output into <b>PLANS[floor].pins</b> in
         <code>js/plan.js</code>.
       </p>
+      <p id="focusHelp" hidden
+         style="font-size:11px;color:var(--faint);margin:0;line-height:1.6;
+                border-top:1px solid rgba(255,255,255,.09);padding-top:9px">
+        <b style="color:#FF9E3D">Tracing the shape</b><br>
+        <b>Drag</b> a corner to move it — this is the fast way to adjust a seeded
+        outline.<br>
+        <b>Click</b> adds a corner at the end · <b>Shift-click</b> inserts one
+        into the nearest edge · <b>Alt-click</b> deletes the corner under the
+        pointer · <b>Backspace</b> takes back the last · <b>Enter</b> finishes.<br>
+        The shape belongs to the selected building <i>and floor</i>. Paste the
+        output into <b>FOCUS_SHAPES</b> in <code>js/plan.js</code>.
+      </p>
     </div>
   </aside>
 </div>
@@ -130,26 +143,37 @@ var store = {
 var pins = store.load();          // { floorCode: { CODE: [x,y] } }
 var units = [], cur = 0, floorCode = null, buildingId = null;
 
-/* Building Q's focus SHAPE — the region the PDF keeps sharp while the rest of
-   the drawing fades back.
+/* Focus SHAPES — the region the PDF keeps sharp while the rest of the drawing
+   fades back. One per building per floor.
 
-   A traced outline, not a rectangle: Q wraps the courtyard, so any box around it
-   drags the courtyard in with it. Clicked point by point so it can follow the
-   real edge.
-   ONE shape for Q, used on every floor, on the user's instruction 2026-08-17 —
-   Q sits in the same place on all four drawings. The other buildings are left
-   on their pin bounding box, which is fine for a simple bar. */
-var FKEY = 'qomor.focus.v2';
-var focusShape = (function () {
-  try { return JSON.parse(localStorage.getItem(FKEY)) || []; } catch (e) { return []; }
+   Was a single shape for Q alone. It is now keyed 'FLOOR.BUILDING' because the
+   floors are not interchangeable: FT, SE and TH share a plate, but SP's plates
+   carry a white border the others do not, so a shape traced on SP is about
+   0.02 too wide for the rest. A shape saved under a bare building id would be
+   silently applied to the wrong drawing.
+   v3, not v2 — the old key held a bare array under a different meaning, and
+   reading it as a map would have produced nonsense rather than an error. */
+var FKEY = 'qomor.focus.v3';
+var shapes = (function () {
+  try { return JSON.parse(localStorage.getItem(FKEY)) || {}; } catch (e) { return {}; }
 })();
-var focusMode = false;
+var focusMode = false, dragIdx = -1, dragMoved = false;
+
+function shapeKey() { return floorCode + '.' + buildingId; }
+/* The shape being edited. Created on demand so merely LOOKING at a building
+   never writes an empty shape that would later emit as an empty array. */
+function shapeNow() { return (shapes[shapeKey()] = shapes[shapeKey()] || []); }
+function shapeMaybe() { return shapes[shapeKey()] || []; }
+
 function setFocusMode(on) {
   focusMode = on;
   var b = document.getElementById('btnFocus');
   b.classList.toggle('armed', on);
-  b.textContent = on ? 'Finish shape (' + focusShape.length + ' pts)' : 'Trace Q focus shape';
+  b.textContent = on ? 'Finish shape (' + shapeMaybe().length + ' pts)'
+                     : 'Trace ' + (buildingId || '?') + ' shape';
   document.getElementById('btnFocusClear').hidden = !on;
+  document.getElementById('btnFocusSeed').hidden = !on;
+  document.getElementById('focusHelp').hidden = !on;
 }
 
 var frame = document.getElementById('frame');
@@ -188,13 +212,14 @@ function render() {
          (i === cur ? 'cur' : (u.state || 'sold')) + '"/>';
   });
   /* The traced shape: the closed outline plus a dot on every point, so a
-     misplaced one is obvious and can be taken back with Backspace. */
-  if (focusShape.length) {
-    var pts = focusShape.map(function (p) { return (p[0] * W) + ',' + (p[1] * H); }).join(' ');
+     misplaced one is obvious and can be dragged or taken back with Backspace. */
+  var shape = shapeMaybe();
+  if (shape.length) {
+    var pts = shape.map(function (p) { return (p[0] * W) + ',' + (p[1] * H); }).join(' ');
     s += '<polygon class="focus" points="' + pts + '"/>';
     if (focusMode) {
-      s += focusShape.map(function (p, i) {
-        return '<circle class="fpt' + (i === focusShape.length - 1 ? ' last' : '') +
+      s += shape.map(function (p, i) {
+        return '<circle class="fpt' + (i === shape.length - 1 ? ' last' : '') +
                '" cx="' + (p[0] * W) + '" cy="' + (p[1] * H) + '" r="' + (r * 0.9) + '"/>';
       }).join('');
     }
@@ -218,7 +243,7 @@ function render() {
   document.getElementById('progress').textContent = done + ' of ' + units.length + ' placed';
   document.getElementById('out').value = emit();
   store.save(pins);
-  try { localStorage.setItem(FKEY, JSON.stringify(focusShape)); } catch (e) {}
+  try { localStorage.setItem(FKEY, JSON.stringify(shapes)); } catch (e) {}
 }
 
 function emit() {
@@ -228,12 +253,58 @@ function emit() {
   });
   var out = 'PLANS.' + floorCode + '.pins = {\n' + lines.join('\n') + '\n};';
 
-  if (focusShape.length >= 3) {
-    out += '\n\n/* Building Q, every floor. */\nconst Q_FOCUS = [\n' +
-      focusShape.map(function (p) { return '  [' + p[0] + ', ' + p[1] + '],'; }).join('\n') +
+  /* Emitted against the bucket the shape actually lives in, so the block pastes
+     straight into plan.js. Naming the floor unconditionally would emit
+     FOCUS_SHAPES.SP.M even when every shape sits under ANY and no SP key
+     exists — which throws on paste rather than failing visibly. */
+  var shape = shapeMaybe();
+  if (shape.length >= 3) {
+    var perFloor = (typeof FOCUS_SHAPES !== 'undefined') && FOCUS_SHAPES[floorCode];
+    var bucket = (perFloor && perFloor[buildingId]) ? floorCode : 'ANY';
+    var note = bucket === 'ANY'
+      ? '\n   ANY = every floor. Trace with clearance so it contains each\n' +
+        '   floor\'s plate; SP\'s sits about 0.02 outside the others\'.'
+      : '\n   ' + floorCode + ' only — this floor overrides ANY.';
+    out += '\n\n/* FOCUS_SHAPES.' + bucket + '.' + buildingId + note + ' */\n' +
+      'FOCUS_SHAPES.' + bucket + '.' + buildingId + ' = [\n' +
+      shape.map(function (p) { return '  [' + p[0] + ', ' + p[1] + '],'; }).join('\n') +
       '\n];';
   }
   return out;
+}
+
+/* Index of the shape point under the pointer, or -1. The threshold is in
+   NORMALISED units scaled by the drawing's aspect, so grabbing a point feels
+   the same horizontally and vertically on a 2:1 drawing. */
+function pointAt(x, y) {
+  var shape = shapeMaybe(), best = -1, bestD = Infinity;
+  var grab = (radiusUnits() * 1.6) / W;
+  for (var i = 0; i < shape.length; i++) {
+    var dx = shape[i][0] - x, dy = (shape[i][1] - y) * (H / W);
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return bestD <= grab ? best : -1;
+}
+
+/* Where a new point belongs when inserting into an existing outline: after the
+   vertex whose following EDGE passes closest to the click. Appending would put
+   a corner clicked on the left edge between the last and first points, which
+   turns the polygon inside out. */
+function nearestEdge(x, y) {
+  var shape = shapeMaybe(), best = 0, bestD = Infinity;
+  for (var i = 0; i < shape.length; i++) {
+    var a = shape[i], b = shape[(i + 1) % shape.length];
+    var ax = a[0], ay = a[1] * (H / W), bx = b[0], by = b[1] * (H / W);
+    var px = x, py = y * (H / W);
+    var vx = bx - ax, vy = by - ay;
+    var len = vx * vx + vy * vy;
+    var t = len ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len)) : 0;
+    var dx = px - (ax + t * vx), dy = py - (ay + t * vy);
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best + 1;
 }
 
 frame.addEventListener('click', function (e) {
@@ -243,11 +314,21 @@ frame.addEventListener('click', function (e) {
   var y = +((e.clientY - r.top) / r.height).toFixed(4);
   if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
-  /* Tracing the focus shape: every click adds a point and NOTHING else. The
-     unit queue must not advance here — mixing the two is what made the first
-     version of this unusable. */
+  /* Tracing the focus shape: a click only ever edits the SHAPE. The unit queue
+     must not advance here — mixing the two is what made the first version of
+     this unusable. */
   if (focusMode) {
-    focusShape.push([x, y]);
+    /* A click that finished a drag has already done its work. */
+    if (dragMoved) { dragMoved = false; return; }
+    var shape = shapeNow();
+    var hit = pointAt(x, y);
+    if (e.altKey) {
+      if (hit >= 0) shape.splice(hit, 1);          // alt-click removes a corner
+    } else if (e.shiftKey && shape.length >= 3) {
+      shape.splice(nearestEdge(x, y), 0, [x, y]);  // shift-click adds one mid-edge
+    } else {
+      shape.push([x, y]);                          // plain click extends the trace
+    }
     setFocusMode(true);           // refresh the point count on the button
     render();
     return;
@@ -258,8 +339,40 @@ frame.addEventListener('click', function (e) {
   render();
 });
 
+/* Dragging a corner, which is what adjusting an already-traced shape is made
+   of. Held on the frame rather than on the SVG circles because the circles are
+   redrawn on every render and would drop the capture mid-drag. */
+frame.addEventListener('pointerdown', function (e) {
+  if (!focusMode) return;
+  var r = frame.getBoundingClientRect();
+  var hit = pointAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  if (hit < 0) return;
+  dragIdx = hit; dragMoved = false;
+  frame.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+frame.addEventListener('pointerup', function (e) {
+  if (dragIdx < 0) return;
+  dragIdx = -1;
+  try { frame.releasePointerCapture(e.pointerId); } catch (err) {}
+});
+
 frame.addEventListener('pointermove', function (e) {
   var r = frame.getBoundingClientRect();
+
+  if (dragIdx >= 0) {
+    var shape = shapeNow();
+    if (shape[dragIdx]) {
+      shape[dragIdx] = [
+        +Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)).toFixed(4),
+        +Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)).toFixed(4)
+      ];
+      dragMoved = true;
+      render();
+    }
+  }
+
   loupe.classList.add('on');
   loupe.style.left = (e.clientX - LOUPE / 2) + 'px';
   loupe.style.top = (e.clientY - LOUPE - 26) + 'px';
@@ -292,7 +405,28 @@ document.getElementById('btnFocus').onclick = function () {
   render();
 };
 document.getElementById('btnFocusClear').onclick = function () {
-  focusShape.length = 0;
+  if (!confirm('Clear the ' + buildingId + ' shape on ' + floorCode + '?')) return;
+  shapeNow().length = 0;
+  setFocusMode(true);
+  render();
+};
+
+/* Adjusting a shape that is nearly right beats tracing one from nothing, which
+   is the same reasoning as seeding the pins. Loads whatever plan.js ships for
+   this building on this floor, including the ANY fallback, so Q seeds from its
+   hand trace and M/O/R from their measured outlines. */
+document.getElementById('btnFocusSeed').onclick = function () {
+  var have = shapeNow();
+  if (have.length && !confirm('Replace the ' + have.length +
+      '-point shape you have for ' + buildingId + ' on ' + floorCode + '?')) return;
+  var src = (typeof focusShape === 'function') ? focusShape(floorCode, buildingId) : null;
+  if (!src || !src.length) {
+    alert('plan.js has no shape for ' + buildingId + ' on ' + floorCode + '.');
+    return;
+  }
+  /* Copied point by point — a reference would let a drag here edit the live
+     FOCUS_SHAPES object, and on FT that object is shared with SE and TH. */
+  shapes[shapeKey()] = src.map(function (p) { return [p[0], p[1]]; });
   setFocusMode(true);
   render();
 };
@@ -341,7 +475,7 @@ document.addEventListener('keydown', function (e) {
      the two modes that made the first version unusable. */
   if (focusMode) {
     if (e.key === 'Backspace') {
-      e.preventDefault(); focusShape.pop(); setFocusMode(true); render();
+      e.preventDefault(); shapeNow().pop(); setFocusMode(true); render();
     }
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault(); setFocusMode(false); render();
@@ -372,6 +506,10 @@ function pick() {
      resumes where the work stopped instead of at the top. */
   var p = pinsFor();
   for (var i = 0; i < units.length; i++) { if (!p[units[i].code]) { cur = i; break; } }
+  /* The shape follows the selection, so the button has to be relabelled and its
+     point count refreshed — otherwise switching from M to O keeps tracing under
+     the old name while drawing the new building's outline. */
+  setFocusMode(focusMode);
   render();
 }
 

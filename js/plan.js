@@ -709,4 +709,97 @@ function pinCount(floorCode) {
   return p ? Object.keys(p.pins).length : 0;
 }
 
-if (typeof module !== 'undefined') module.exports = { MASSING, PLANS, pinCount };
+/* ---------------------------------------------------------- focus shapes --
+ *
+ * The third kind of geometry: the outline of the area the PDF's floor page
+ * keeps SHARP while the rest of the drawing fades back to PLAN_FADED. Same
+ * normalised coordinates as the pins — x a fraction of the image width, y a
+ * fraction of its height.
+ *
+ * Lives here rather than in pdf.js, which is its only reader in the app,
+ * because pin-tool.html has to see it to seed the tracer and the tool does not
+ * load pdf.js.
+ *
+ * Keyed by FLOOR, then by building, with ANY for a shape that holds on every
+ * floor. Everything currently lives in ANY.
+ *
+ * That the floors can share one shape is not an assumption, it is a property of
+ * how these were traced. The plates are NOT in the same place on every floor:
+ * SP's are drawn with a white border the others do not have, which puts its
+ * edges about 0.02 further out — roughly 24px on the drawing. A shape traced
+ * tight to one floor would leave a band of half-faded wall on another. These
+ * were traced on SP with deliberate clearance instead, so each one CONTAINS
+ * every floor's plate: 15-48% larger by area, and verified 2026-08-17 to hold
+ * all 4 x 3 measured plate outlines and all 470 M/O/R pins across the four
+ * floors, with no two shapes overlapping.
+ *
+ * Trace a replacement the same way — generously — or give the floor its own
+ * entry beside ANY, which focusShape() will prefer.
+ *
+ * A building with no entry falls back to the bounding box of its own pins,
+ * which stops at the middle of the outermost rooms. That is a last resort, not
+ * a good default.
+ */
+const FOCUS_SHAPES = {
+  ANY: {
+    /* Building Q, every floor. Traced by hand in pin-tool.html and confirmed by
+       the user 2026-08-17.
+       It follows Q's OUTER edge only, so the courtyard the C wraps stays inside
+       the shape and is kept sharp along with the building. That is deliberate:
+       the courtyard is part of what Q is. Worth knowing before anyone
+       "corrects" it — the shape is 41% larger by area than Q's plate alone, and
+       points across the middle of the courtyard all test inside. */
+    Q: [
+      [0.0555, 0.1607],
+      [0.2877, 0.1572],
+      [0.2877, 0.3801],
+      [0.2894, 0.5379],
+      [0.3533, 0.5379],
+      [0.3550, 0.7642],
+      [0.3533, 0.7677],
+      [0.0555, 0.7642],
+    ],
+
+    /* M, O and R, every floor. Traced by the user on SP, 2026-08-17, replacing
+       the measured outlines that stood here for a few hours.
+       Plain quads with clearance around the bar, rather than outlines hugging
+       the walls — which is what lets one shape serve all four floors.
+       The clearance is DELIBERATE and confirmed by the user: the highlight
+       catching a band of pavement, and a strip of the neighbouring roof above
+       M, is accepted as the price of one shape per building. Do not tighten
+       these to the walls to make them look neater — that is what breaks the
+       cross-floor fit. If a tighter highlight is ever wanted, trace each floor
+       separately and give it its own entry beside ANY. */
+    M: [
+      [0.2961, 0.1401],
+      [0.5838, 0.1469],
+      [0.5838, 0.3904],
+      [0.2961, 0.3939],
+    ],
+    O: [
+      [0.6006, 0.1469],
+      [0.8900, 0.1401],
+      [0.8967, 0.3836],
+      [0.5989, 0.3870],
+    ],
+    /* The trace arrived with [0.3903, 0.5379] repeated as its first two points
+       — a double click on the opening corner. Dropped: a zero-length edge is
+       harmless to the clip but reads as a mistake in the geometry. */
+    R: [
+      [0.3903, 0.5379],
+      [0.8143, 0.5345],
+      [0.8214, 0.7757],
+      [0.3963, 0.7766],
+    ],
+  },
+};
+
+/** The outline for one building on one floor, or null to fall back to pins. */
+function focusShape(floorCode, bId) {
+  const perFloor = FOCUS_SHAPES[floorCode];
+  return (perFloor && perFloor[bId]) || FOCUS_SHAPES.ANY[bId] || null;
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { MASSING, PLANS, pinCount, FOCUS_SHAPES, focusShape };
+}

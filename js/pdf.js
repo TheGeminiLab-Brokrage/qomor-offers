@@ -51,35 +51,11 @@ const TAG_RED   = [158, 34, 28];
  * surrounding wings to stay recognisable. */
 const PLAN_FADED = 0.3;
 
-/**
- * Outlines of the area to keep sharp on the floor page, per building, as
- * fractions of the drawing — the same coordinate space the pins use.
- *
- * ONE shape per building, used on EVERY floor: a building sits in the same
- * place on all four drawings, so tracing it once is enough. Traced by hand in
- * pin-tool.html ("Trace Q focus shape"), which prints this array.
- *
- * A building with no entry here falls back to the bounding box of its own pins,
- * which is accurate enough for the straight bars — M, O and R. Q is the one
- * that needs a shape, because it wraps the courtyard and a box around it keeps
- * the courtyard sharp inside an otherwise faded drawing.
- */
-const FOCUS_SHAPES = {
-  /* Traced by the user 2026-08-17. The L follows Q's outer edge: down the left
-     side, along the top, back down the inner face at x≈0.288 — which is what
-     keeps the COURTYARD outside the shape and fading with everything else —
-     then out to x≈0.355 for the lower bar and back along the bottom. */
-  Q: [
-    [0.0555, 0.1607],
-    [0.2877, 0.1572],
-    [0.2877, 0.3801],
-    [0.2894, 0.5379],
-    [0.3533, 0.5379],
-    [0.3550, 0.7642],
-    [0.3533, 0.7677],
-    [0.0555, 0.7642],
-  ],
-};
+/* FOCUS_SHAPES and focusShape() live in js/plan.js.
+   They are geometry in the same normalised coordinate space as the pins, and
+   plan.js is the geometry registry — but the deciding reason is that
+   pin-tool.html has to read them to seed the tracer, and it loads plan.js
+   without loading this file. */
 
 /**
  * The brand typefaces — set by registerFonts() once the document exists.
@@ -1444,9 +1420,9 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
        * The pins only bound the ROOMS, so the box they give stops at the middle
        * of the outermost ones and misses walls, corridors and anything
        * unpinned — and for a building that wraps a courtyard a box is the wrong
-       * figure entirely. FOCUS_SHAPES holds the outlines traced by hand; every
-       * other building falls back to its pins, which is fine for a plain bar. */
-      const shape = FOCUS_SHAPES[bId];
+       * figure entirely. FOCUS_SHAPES holds a real outline for every building
+       * on every floor now; the pin box survives only as a fallback. */
+      const shape = focusShape(unit.floorCode, bId);
       const bounds = shape ? null : buildingBounds(planDef, bId);
       const highlighted = !!(shape || bounds);
       if (highlighted) {
