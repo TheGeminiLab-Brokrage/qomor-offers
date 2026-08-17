@@ -127,10 +127,17 @@ aside{border-left:1px solid var(--edge);display:flex;flex-direction:column;min-h
 
 <div id="loupe"></div>
 
-<script src="js/config.js"></script>
-<script src="js/plan.js"></script>
-<script src="js/sheet.js"></script>
-<script src="js/engine.js"></script>
+<!-- ?tool is not a parameter anything reads — it is a marker the service worker
+     matches on to pass these straight to the network and never cache them.
+     Without it the tool boots against whatever js/*.js the app cached, which on
+     2026-08-17 meant no ground floor and the drawings replaced on 2026-08-16.
+     A tool that writes coordinates into the source must read the source that is
+     actually deployed, and it needs the live sheet regardless, so there is
+     nothing to gain from caching it. Keep the marker on every one of these. -->
+<script src="js/config.js?tool"></script>
+<script src="js/plan.js?tool"></script>
+<script src="js/sheet.js?tool"></script>
+<script src="js/engine.js?tool"></script>
 <script>
 "use strict";
 

@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v19';
+const CACHE = 'qomor-offers-v20';
 
 /* Code is revalidated; artwork is not.
  *
@@ -91,6 +91,22 @@ self.addEventListener('fetch', (event) => {
   // Off-origin: the Google Sheet, and nothing else. Never intercepted, so the
   // inventory is always live and always the browser's own request.
   if (url.origin !== self.location.origin) return;
+
+  /* THE INTERNAL TOOLS ARE NEVER CACHED, at all, in either direction.
+   *
+   * pin-tool.html writes coordinates that are pasted into the source. If it
+   * boots against a stale js/plan.js it shows a stale floor list and stale
+   * drawings, and pins placed on the wrong drawing are worse than no pins —
+   * they look right and point at nothing. That happened on 2026-08-17: the
+   * tool opened without the ground floor and showing the CAD sheets replaced
+   * on 2026-08-16, because the shared js/*.js came back from a cache written
+   * several deploys earlier.
+   *
+   * Offline support is worthless here anyway — the tool cannot do anything
+   * without the live inventory. So the tool and the modules it pulls (marked
+   * with ?tool) go straight to the network, and are never written to the
+   * cache where they could shadow the app's own copies. */
+  if (url.pathname.endsWith('/pin-tool.html') || url.searchParams.has('tool')) return;
 
   /* Navigations go network-first so a deployed update is picked up as soon as
    * there is a connection, falling back to the cached page when there isn't. */
