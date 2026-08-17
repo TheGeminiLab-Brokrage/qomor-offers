@@ -131,10 +131,25 @@ const FLOOR_CODES = new Set(CONFIG.floors.map((f) => f.code.toUpperCase()));
  * mistaken for a real one.
  */
 function parseUnitCode(code) {
-  const m = /^([A-Za-z]{2,4})-(\d{1,3})$/.exec(String(code).trim());
+  /* The suffix is USUALLY a number, but the ground plaza's three anchors are
+     lettered: GPL-H, GPL-S and GPL-K, the Hyper Market (1940 m2), Showroom
+     (933) and Kids Area (703). They are inventory rows like any other — same
+     Type, same area column, same blank price — so refusing them meant three
+     permanent warnings and, more to the point, 3576 m2 of the floor that could
+     never be pinned or offered. */
+  const m = /^([A-Za-z]{2,4})-([0-9]{1,3}|[A-Za-z]{1,2})$/.exec(String(code).trim());
   if (!m) return null;
   const head = m[1].toUpperCase();
-  const unit = Number(m[2]);
+  const suffix = m[2].toUpperCase();
+
+  /* `unit` is ONLY EVER A SORT KEY — everything user-facing shows u.code — so a
+     synthetic value for the lettered ones is safe. They sort after every
+     numbered unit (1000 is far above the 182 the largest floor holds) and
+     alphabetically among themselves, which puts the anchors at the end of the
+     list rather than interleaved with the numbered shops. */
+  const unit = /^\d+$/.test(suffix)
+    ? Number(suffix)
+    : 1000 + (suffix.charCodeAt(0) - 65);
 
   if (FLOOR_CODES.has(head)) return { building: null, floorCode: head, unit };
 
