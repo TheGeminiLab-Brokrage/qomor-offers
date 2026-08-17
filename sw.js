@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v22';
+const CACHE = 'qomor-offers-v23';
 
 /* Code is revalidated; artwork is not.
  *

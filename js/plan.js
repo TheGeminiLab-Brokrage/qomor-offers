@@ -701,7 +701,7 @@ const PLANS = {
    * fill in a price and an availability. */
   GPL: {
     image: 'assets/plans/GPL.jpg', label: 'Ground Plaza', aspect: 3600 / 1479,
-    /* All 178, placed by hand in pin-tool.html 2026-08-17 and checked by eye
+    /* All 181, placed by hand in pin-tool.html 2026-08-17 and checked by eye
        against the printed numbers across the whole plate. Complete 001-178 with
        no gaps, no duplicates and no two pins on the same point — that last check
        is what caught building O's off-by-one, where a double-click left every
@@ -886,6 +886,17 @@ const PLANS = {
     'GPL-176': [0.2524, 0.7586],
     'GPL-177': [0.2397, 0.7586],
     'GPL-178': [0.221, 0.7586],
+
+    /* The three lettered anchors, placed 2026-08-17. Verified by sampling the
+       drawing underneath each one rather than by eye alone: the blocks are
+       colour-filled, so the pixel under the pin is proof of which block it is
+       in. H reads blue (218,247,255), K green (229,255,216), S pink
+       (255,207,207) — each its own block. H is on the Hyper Market SALES FLOOR,
+       not the Hyper Market Storage strip, which is the same blue and the one
+       plausible way to get this wrong. */
+    'GPL-H': [0.1829, 0.5199],
+    'GPL-K': [0.9129, 0.2977],
+    'GPL-S': [0.3286, 0.8923],
     },
   },
 };
