@@ -79,6 +79,8 @@ const STRINGS = {
     'plan.legend': 'Available',
     'plan.legendHeld': 'Reserved',
     'plan.alt': '{floor} plan',
+    'plan.zoomIn': 'Zoom in',
+    'plan.zoomOut': 'Zoom out',
     'plan.nonePinned': 'No units are pinned on the {floor} drawing yet — pick from the panel, every available unit is listed there.',
     'plan.somePinned': '{pinned} of {total} units are pinned on this drawing; the rest are in the panel.',
 
@@ -215,6 +217,8 @@ const STRINGS = {
     'plan.legend': 'متاحة',
     'plan.legendHeld': 'محجوزة',
     'plan.alt': 'رسمة {floor}',
+    'plan.zoomIn': 'تكبير',
+    'plan.zoomOut': 'تصغير',
     'plan.nonePinned': 'لا توجد وحدات محدّدة على رسمة {floor} بعد — اختر من القائمة، فكل الوحدات المتاحة مدرجة بها.',
     'plan.somePinned': '{pinned} من {total} وحدة محدّدة على الرسمة، والباقي في القائمة.',
 

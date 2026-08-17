@@ -106,21 +106,45 @@ const FLOOR_BY_NAME = CONFIG.floors.reduce((m, f) => {
   return m;
 }, {});
 
+/** Every floor code the project knows, for parseUnitCode to test against. */
+const FLOOR_CODES = new Set(CONFIG.floors.map((f) => f.code.toUpperCase()));
+
 /**
- * "QSP-067" -> { building: 'Q', floorCode: 'SP', unit: 67 }. Null if it
- * doesn't fit.
+ * "QSP-067" -> { building: 'Q', floorCode: 'SP', unit: 67 }
+ * "GPL-001" -> { building: null, floorCode: 'GPL', unit: 1 }
+ * Null if it doesn't fit.
  *
  * Unit numbers restart per building per floor, so the number alone identifies
  * nothing — only the whole code is unique. Never key inventory on the number.
+ *
+ * WHY THIS IS NOT ONE REGEX ANY MORE. It used to be one building letter plus
+ * two floor letters, which silently mis-parsed the whole ground floor:
+ * "GPL-001" matched as building "G" on a floor "PL", inventing both. The two
+ * shapes are genuinely ambiguous — GPL-001 is a valid reading either way — so
+ * the ambiguity is settled against the FLOOR LIST rather than by counting
+ * letters, and the whole-head-is-a-floor reading wins, because a floor code is
+ * a fact where a leading building letter is only a guess.
+ *
+ * The ground plaza is one continuous plate numbered 001-178 with no wings, so
+ * its units have no building at all. Callers must treat building as OPTIONAL.
+ * It is null rather than a placeholder, so a missing building cannot be
+ * mistaken for a real one.
  */
 function parseUnitCode(code) {
-  const m = /^([A-Za-z])([A-Za-z]{2})-(\d{1,3})$/.exec(String(code).trim());
+  const m = /^([A-Za-z]{2,4})-(\d{1,3})$/.exec(String(code).trim());
   if (!m) return null;
-  return {
-    building: m[1].toUpperCase(),
-    floorCode: m[2].toUpperCase(),
-    unit: Number(m[3]),
-  };
+  const head = m[1].toUpperCase();
+  const unit = Number(m[2]);
+
+  if (FLOOR_CODES.has(head)) return { building: null, floorCode: head, unit };
+
+  const floorCode = head.slice(1);
+  if (FLOOR_CODES.has(floorCode)) return { building: head[0], floorCode, unit };
+
+  /* Neither reading names a floor this project has. Returning the letter-count
+     guess would push an unknown floor downstream to be warned about a second
+     time; one clear "not in the expected form" is the better report. */
+  return null;
 }
 
 /**
@@ -128,7 +152,7 @@ function parseUnitCode(code) {
  * Returns { units, warnings } — warnings are surfaced in the UI rather than
  * thrown, so one bad row never takes the whole app down mid-meeting.
  */
-function normalizeRows(rows, planAreas) {
+function normalizeRows(rows, planAreas, opts = {}) {
   const warnings = [];
   if (!rows.length) return { units: [], warnings: ['The sheet is empty.'] };
 
@@ -170,7 +194,15 @@ function normalizeRows(rows, planAreas) {
       price = total;
       warnings.push(`${where}: no Final Price — using the Total Unit Price, i.e. no discount.`);
     }
-    if (price === null || price <= 0) { warnings.push(`${where}: no usable price — skipped.`); return; }
+    /* No price, no offer — a unit that cannot be quoted must never reach the
+       app. The one caller that wants them anyway is pin-tool.html: placing a
+       pin is geometry, not money, and the ground plaza's 178 units are all
+       unpriced today. Without this the tool cannot show the very units it
+       exists to pin. Nothing that builds an offer passes keepUnpriced. */
+    if (price === null || price <= 0) {
+      if (!opts.keepUnpriced) { warnings.push(`${where}: no usable price — skipped.`); return; }
+      price = null;
+    }
 
     let area = parseNumber(cell('area'));
     const netArea = parseNumber(cell('netArea'));
@@ -278,9 +310,16 @@ function normalizeRows(rows, planAreas) {
       warnings.push(`${where}: floor column says "${floorName}" (${floorCode}) but the code says ${parsed.floorCode}.`);
     }
 
-    const building = (cell('building') || parsed.building).toUpperCase();
-    if (building !== parsed.building) {
-      warnings.push(`${where}: building column says "${building}" but the code says ${parsed.building}.`);
+    /* Only cross-check the building on floors that HAVE buildings. The ground
+       plaza has none — its column reads "Ground Plaza", the floor's own name —
+       so comparing it against a null building would warn on all 178 rows about
+       a disagreement that does not exist. `.toUpperCase()` on the null was also
+       a crash waiting for the first ground-floor row with a blank column. */
+    if (parsed.building) {
+      const building = (cell('building') || parsed.building).toUpperCase();
+      if (building !== parsed.building) {
+        warnings.push(`${where}: building column says "${building}" but the code says ${parsed.building}.`);
+      }
     }
 
     units.push({
@@ -339,7 +378,7 @@ function collapseWarnings(warnings, keep = 4) {
 }
 
 /** One workbook: try each URL in turn, return its units or null. */
-async function loadOneSheet(source, planAreas, errors) {
+async function loadOneSheet(source, planAreas, errors, opts = {}) {
   for (const url of source.urls) {
     try {
       const res = await fetch(url, { cache: 'no-store' });
@@ -348,7 +387,7 @@ async function loadOneSheet(source, planAreas, errors) {
       // A login page means the sheet stopped being published.
       if (/^\s*</.test(text)) { errors.push(`${source.label} is no longer published publicly`); continue; }
 
-      const { units, warnings } = normalizeRows(parseCSV(text), planAreas);
+      const { units, warnings } = normalizeRows(parseCSV(text), planAreas, opts);
       if (!units.length) { errors.push(`${source.label}: ${warnings[0] || 'no usable rows'}`); continue; }
       return { units, warnings };
     } catch (err) {
@@ -369,11 +408,11 @@ async function loadOneSheet(source, planAreas, errors) {
  * partial load keeps what it has, says plainly which inventory is missing, and
  * reports itself as not live, which is what drives the stale badge in the UI.
  */
-async function loadInventory(planAreas) {
+async function loadInventory(planAreas, opts = {}) {
   const errors = [];
   const sources = CONFIG.sheets || [];
 
-  const loaded = await Promise.all(sources.map((s) => loadOneSheet(s, planAreas, errors)));
+  const loaded = await Promise.all(sources.map((s) => loadOneSheet(s, planAreas, errors, opts)));
 
   const units = [];
   const warnings = [];

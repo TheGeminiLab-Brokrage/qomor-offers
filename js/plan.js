@@ -679,7 +679,39 @@ const PLANS = {
 
   TH: { image: 'assets/plans/SETH.jpg', label: 'Third Floor', pins: {},
         sharedWith: 'SE', patchLabel: true },
+
+  /* The ground plaza, added 2026-08-17 from the client's 040.png.
+   *
+   * Unlike every other floor this is CAD linework on white, not a plate
+   * composed onto the aerial photograph, so it reads differently in the app and
+   * in the PDF. Shipped as-is on the user's instruction; a composed version
+   * would match the other three, and swapping to one later would invalidate
+   * every pin placed here, exactly as the 2026-08-16 drawing swap did.
+   *
+   * It also has its OWN ASPECT — 3600x1479, 2.4333, against 2.0441 everywhere
+   * else — which is why `aspect` exists on these entries at all. Anything
+   * sizing the drawing must read it per floor rather than assume one number.
+   *
+   * 3600px wide rather than the others' 2412 because this plate carries 178
+   * units and their printed numbers have to survive the app's zoom: at 3600 the
+   * numbers are still crisp at 1:1, which is about 4.9x in the app.
+   *
+   * NO PINS YET. The 178 units are unpriced in the workbook, so none of them
+   * reaches the app; the pins are placed in pin-tool.html and pasted here. */
+  GPL: { image: 'assets/plans/GPL.jpg', label: 'Ground Plaza',
+         aspect: 3600 / 1479, pins: {} },
 };
+
+/* Every other drawing is 2412x1180. Stated once, here, rather than repeated on
+   four entries — and read through planAspect() so a floor that differs (GPL)
+   cannot be sized with somebody else's number. */
+const DEFAULT_PLAN_ASPECT = 2412 / 1180;
+
+/** Width divided by height for one floor's drawing. */
+function planAspect(floorCode) {
+  const p = PLANS[floorCode];
+  return (p && p.aspect) || DEFAULT_PLAN_ASPECT;
+}
 
 /* Re-key a shared floor's pins from the floor it shares its drawing with.
  *
@@ -801,5 +833,5 @@ function focusShape(floorCode, bId) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { MASSING, PLANS, pinCount, FOCUS_SHAPES, focusShape };
+  module.exports = { MASSING, PLANS, pinCount, FOCUS_SHAPES, focusShape, planAspect };
 }

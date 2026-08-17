@@ -126,18 +126,35 @@
         <div class="legend">
           <span><i class="sw available"></i><span data-i18n="plan.legend">Available</span></span>
           <span><i class="sw reserved"></i><span data-i18n="plan.legendHeld">Reserved</span></span>
+          <span class="spacer"></span>
+          <!-- Zoom. The pins scale WITH the drawing, so the 6px target and the
+               6.73px closest gap keep their ratio at every level — no overlap
+               at any zoom, and at 4x a 24px target, which is a fingertip rather
+               than mouse work. That is the whole reason this control exists. -->
+          <button class="ghost small zoombtn" id="planZoomOut" type="button"
+                  data-i18n-attr="aria-label:plan.zoomOut" aria-label="Zoom out">&minus;</button>
+          <b id="planZoomLevel">100%</b>
+          <button class="ghost small zoombtn" id="planZoomIn" type="button"
+                  data-i18n-attr="aria-label:plan.zoomIn" aria-label="Zoom in">+</button>
         </div>
         <!-- Sold pins are RED: a grey "sold" reads too close to a grey
              "not released". -->
         <div id="planWrap">
-          <img id="planImg" alt="">
-          <!-- Pins are positioned buttons, not SVG. The new drawings are
-               2.04:1, and the old SVG overlay stretched to fit with
-               preserveAspectRatio="none", which squashed every circle into a
-               13x6px ellipse — unreadable as a dot and far too small to tap.
-               A button placed at left/top percentages stays round at any
-               aspect and keeps a fixed-size touch target. -->
-          <div id="planPins"></div>
+          <!-- planStage is what zooms. The drawing and the pins scale together
+               because both are sized in percentages of this box, so a pin
+               cannot drift off its room at any zoom. planTip stays OUTSIDE the
+               stage, positioned against planWrap, so the label keeps its
+               readable size instead of being magnified with the drawing. -->
+          <div id="planStage">
+            <img id="planImg" alt="">
+            <!-- Pins are positioned buttons, not SVG. The new drawings are
+                 2.04:1, and the old SVG overlay stretched to fit with
+                 preserveAspectRatio="none", which squashed every circle into a
+                 13x6px ellipse — unreadable as a dot and far too small to tap.
+                 A button placed at left/top percentages stays round at any
+                 aspect and keeps a fixed-size touch target. -->
+            <div id="planPins"></div>
+          </div>
           <div id="planTip"><b></b><i></i></div>
         </div>
         <p class="empty" id="planNote" hidden></p>

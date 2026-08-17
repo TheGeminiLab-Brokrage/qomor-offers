@@ -501,7 +501,17 @@ function pick() {
     draw.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     render();
   };
-  units = ALL.filter(function (u) { return u.building === buildingId && u.floorCode === floorCode; })
+  /* The ground plaza has NO buildings — one continuous plate numbered 001-178,
+     so its units carry building: null. Filtering those by the building selector
+     would always come back empty, whichever wing is showing, so on a
+     building-less floor the selector is ignored and disabled rather than left
+     to look meaningful. */
+  var hasBuildings = ALL.some(function (u) { return u.floorCode === floorCode && u.building; });
+  document.getElementById('selBuilding').disabled = !hasBuildings;
+  units = ALL.filter(function (u) {
+                return u.floorCode === floorCode
+                    && (!hasBuildings || u.building === buildingId);
+              })
               .sort(function (a, b) { return a.unit - b.unit; });
   cur = 0;
   /* Start on the first unit that still has no pin, so reopening the tool
@@ -516,7 +526,12 @@ function pick() {
 }
 
 var ALL = [];
-loadInventory().then(function (res) {
+/* keepUnpriced: placing a pin is geometry, not money. The ground plaza's 178
+   units have no price in the workbook yet, so the app rightly refuses them —
+   but they are exactly the units this tool exists to pin, and waiting for the
+   client to price them before the pins can be placed would serialise two jobs
+   that have nothing to do with each other. No offer is built here. */
+loadInventory(null, { keepUnpriced: true }).then(function (res) {
   ALL = res.units;
   document.getElementById('status').textContent =
     res.units.length + ' units read from the sheet' + (res.live ? ' (live)' : ' (offline copy)');

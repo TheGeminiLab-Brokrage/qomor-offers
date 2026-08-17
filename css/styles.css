@@ -26,7 +26,11 @@
   --page-max:1080px;
   --unit-panel:290px;
   --unit-gap:14px;
-  --plan-aspect:2.0441;          /* every floor drawing is 2412 x 1180 */
+  /* Fallback only. NOT "every floor drawing is 2412 x 1180" any more — the
+     ground plaza is 3600 x 1479 (2.4333). renderPlan() sets this per floor from
+     planAspect(); this value only covers the moment before the first floor is
+     chosen. Sizing anything from the literal 2.0441 will squash that floor. */
+  --plan-aspect:2.0441;
 
   /* Payment schedule row metrics. These are not free numbers — .schedwrap's
      minimum height is calculated from them so that two and a half years is
@@ -360,12 +364,34 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 
 /* ---------- floor plan with pins (step 3) ---------- */
 #planWrap{
-  position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--edge);
+  /* aspect-ratio, not "however tall the image is". Once the stage can be zoomed
+     past 100% the drawing no longer sets this box's height, and without a fixed
+     shape the whole page would grow on every zoom step. --plan-aspect is set
+     per floor by renderPlan(), because the ground plaza is 2.4333 and the rest
+     are 2.0441. */
+  position:relative;border-radius:14px;border:1px solid var(--edge);
   background:#fff;margin-bottom:12px;
+  aspect-ratio:var(--plan-aspect);
+  /* hidden until actually zoomed. At 100% the stage is exactly as wide as this
+     box, and sub-pixel rounding on that equality is enough to raise a stray
+     scrollbar on the unzoomed plan — which then shifts the drawing and every
+     pin with it. The .zoomed class is set by setZoom only above 1x. */
+  overflow:hidden;overscroll-behavior:contain;
 }
+#planWrap.zoomed{overflow:auto;touch-action:pan-x pan-y;cursor:grab}
 #planWrap[hidden]{display:none}
+/* The zoomed layer. Width in percent so the image and the pins, both sized in
+   percentages of it, scale as one and stay registered to each other. */
+#planStage{position:relative;width:calc(100% * var(--plan-zoom,1));min-width:100%}
 #planImg{width:100%;display:block}
 #planPins{position:absolute;inset:0;z-index:2}
+.legend .zoombtn{
+  min-width:30px;font-size:14px;line-height:1;padding:4px 9px;font-variant-numeric:tabular-nums;
+}
+#planZoomLevel{
+  font-size:11.5px;color:var(--dim);min-width:42px;text-align:center;
+  font-variant-numeric:tabular-nums;
+}
 /* THE BUTTON IS THE TOUCH TARGET, THE ::before IS THE DOT. They are sized
    separately on purpose: the dot has to stay small enough to sit inside a room
    on a drawing where a room is about 30px wide, while the target has to stay
@@ -374,28 +400,42 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
    painted. Sizes are in px, not a fraction of the drawing, so they do not
    shrink with the image on a phone — which is exactly where the tap matters. */
 #planPins .pin{
-  /* A FIXED 6px target, deliberately NOT derived from --pin-dot.
-     The closest two pins in the project sit 6.73px apart on a desktop, measured
-     across all four floors — the 9.5px that every earlier version was sized
-     against is the MEDIAN gap, not the minimum. 6 is the largest target that
-     fits under 6.73, so no two targets touch anywhere in the project and a
-     click can never be handed to the neighbouring unit; it either hits the pin
-     under the pointer or hits nothing.
-     Deriving the target from the dot is what kept reintroducing this: each time
-     the dot grew to be more visible, the target grew past the spacing with it.
-     They are independent now. See CONFIG.pinDotPx for the full sums. */
+  /* A 6px target AT 100%, scaled with the drawing.
+     The closest two pins in the project sit 6.73px apart at 100% zoom, measured
+     across all four floors — the 9.5px every earlier version was sized against
+     is the MEDIAN gap, not the minimum. 6 is the largest target that fits under
+     6.73, so no two targets touch and a click can never be handed to the
+     neighbouring unit; it either hits the pin under the pointer or hits nothing.
+
+     MULTIPLIED BY THE ZOOM, which is what keeps that true at every scale rather
+     than only at 100%: the gap between pins scales with the drawing, so a
+     target that scales with it holds the same 6 : 6.73 ratio all the way up.
+     At 4x the target is 24px against a 26.9px gap — still no overlap, and now
+     a fingertip instead of a mouse.
+     An earlier version held the target at a fixed 6px on the theory that zoom
+     should push pins apart rather than enlarge them. It does push them apart,
+     but it also left a 6px target adrift in 27px of dead space, so zooming in
+     made the pin harder to hit and visually insignificant against the enlarged
+     rooms. Do not go back to it. See CONFIG.pinDotPx for the full sums. */
   position:absolute;
-  width:6px;height:6px;
+  width:calc(6px * var(--plan-zoom,1));height:calc(6px * var(--plan-zoom,1));
   transform:translate(-50%,-50%);
   margin:0;padding:0;border:0;background:none;cursor:pointer;
   display:grid;place-items:center;-webkit-tap-highlight-color:transparent;
 }
 #planPins .pin::before{
   /* --pin-dot is set from CONFIG.pinDotPx at startup; the fallback keeps the
-     pins visible if that ever fails to apply.
-     Keep the dot no wider than the 6px target above: a dot that spills past its
-     own hit area invites clicks on the part of it that does not respond. */
-  content:'';width:var(--pin-dot,4px);height:var(--pin-dot,4px);border-radius:50%;
+     pins visible if that ever fails to apply. Scaled by the zoom for the same
+     reason as the target above — a dot that stayed 4px while the rooms grew
+     fourfold reads as a speck of dust on the drawing.
+     Keep the dot no wider than the target: a dot spilling past its own hit area
+     invites clicks on the part of it that does not respond.
+     The ring and the shadow are NOT scaled. They are there to separate the dot
+     from whatever it sits on, and a 6px white ring at 4x would swallow the room
+     the dot is marking. */
+  content:'';border-radius:50%;
+  width:calc(var(--pin-dot,4px) * var(--plan-zoom,1));
+  height:calc(var(--pin-dot,4px) * var(--plan-zoom,1));
   border:1.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55);
   transition:width .15s,height .15s;
 }
@@ -411,11 +451,13 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
    than 6px confirms the choice without letting the pin steal a neighbour's
    click. That is why they can be generous where the target cannot. */
 #planPins .pin.available:hover::before{
-  width:calc(var(--pin-dot,4px) + 4px);height:calc(var(--pin-dot,4px) + 4px);
+  width:calc((var(--pin-dot,4px) + 4px) * var(--plan-zoom,1));
+  height:calc((var(--pin-dot,4px) + 4px) * var(--plan-zoom,1));
 }
 #planPins .pin.on::before{
   background:#FF9E3D;border-color:#1A0E02;border-width:2.5px;
-  width:calc(var(--pin-dot,4px) + 6px);height:calc(var(--pin-dot,4px) + 6px);
+  width:calc((var(--pin-dot,4px) + 6px) * var(--plan-zoom,1));
+  height:calc((var(--pin-dot,4px) + 6px) * var(--plan-zoom,1));
 }
 /* Keyboard focus must be visible — the pins are real buttons and tabbable. */
 #planPins .pin:focus-visible{outline:none}

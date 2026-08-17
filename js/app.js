@@ -15,6 +15,8 @@ const state = {
   floorCode: null,
   unit: null,
   planId: null,
+  /* Plan zoom. Deliberately NOT remembered between floors — see renderPlan. */
+  zoom: 1,
 };
 
 /* Poll while the tab is open. Cheap — the sheet is ~150 KB and gviz sends
@@ -134,7 +136,24 @@ function renderWarnings() {
 
 /* -------------------------------------------------------------- step 1-2 -- */
 
+/** Is this floor divided into wings, or one continuous plate? */
+function floorHasBuildings(floorCode) {
+  const f = CONFIG.floors.find((x) => x.code === floorCode);
+  return !f || f.hasBuildings !== false;
+}
+
 function unitsIn(buildingId, floorCode) {
+  /* A floor with no wings belongs to whichever building is selected, because it
+     belongs to none of them — the ground plaza is one plate numbered 001-178
+     and its units carry building: null, so the usual filter would match nothing
+     whatever the customer picked.
+
+     Guarded on floorCode being given, which is what keeps the building CARDS
+     honest: renderBuildings counts with no floor, and admitting plate units
+     there would add all 178 to every building's total. */
+  if (floorCode && !floorHasBuildings(floorCode)) {
+    return state.units.filter((u) => u.floorCode === floorCode);
+  }
   return state.units.filter((u) =>
     u.building === buildingId && (!floorCode || u.floorCode === floorCode));
 }
@@ -340,6 +359,24 @@ function renderPlan() {
     note.hidden = true;
   }
 
+  /* Per floor, because the ground plaza is not the same shape as the rest
+     (2.4333 against 2.0441). The drawing's box is sized from this in CSS, so a
+     stale value letterboxes or crops the plan and every pin drifts with it. */
+  document.documentElement.style.setProperty('--plan-aspect', planAspect(state.floorCode));
+
+  /* Back to 100% whenever the drawing changes. Carrying a 4x zoom across to a
+     different floor leaves the agent looking at an unfamiliar corner of a
+     drawing they did not choose, with no visible cue that they are zoomed in
+     at all. Starting whole is the honest default. */
+  state.zoom = 1;
+  document.documentElement.style.setProperty('--plan-zoom', 1);
+  $('planZoomLevel').textContent = '100%';
+  $('planZoomIn').disabled = false;
+  $('planZoomOut').disabled = true;
+  $('planWrap').classList.remove('zoomed');
+  $('planWrap').scrollLeft = 0;
+  $('planWrap').scrollTop = 0;
+
   $('planImg').src = plan.image;
   $('planImg').alt = t('plan.alt', { floor: td('floor', plan.label) });
   svg.innerHTML = '';
@@ -382,10 +419,71 @@ function showTip(u, pinEl) {
     `${u.area != null ? u.area + ' m²' : ''} · ${u.state === 'available'
       ? fmt(u.price) + ' ' + td('currency', CONFIG.currency) : u.status}`;
   tip.className = 'on' + (u.state === 'available' ? '' : ' off');
-  const r = $('planWrap').getBoundingClientRect();
+  const wrap = $('planWrap');
+  const r = wrap.getBoundingClientRect();
   const p = pinEl.getBoundingClientRect();
-  tip.style.left = (p.left + p.width / 2 - r.left) + 'px';
-  tip.style.top = (p.top - r.top) + 'px';
+  /* + scrollLeft/Top because planWrap scrolls once zoomed. getBoundingClientRect
+     is viewport-relative, but the tip is positioned against planWrap's padding
+     box, which scrolls away underneath it — without this the label detaches
+     from its pin by exactly the scroll distance. */
+  tip.style.left = (p.left + p.width / 2 - r.left + wrap.scrollLeft) + 'px';
+  tip.style.top = (p.top - r.top + wrap.scrollTop) + 'px';
+}
+
+/* ------------------------------------------------------------------ zoom --
+ *
+ * Zooming scales the DRAWING, not the pins. The pin target is a fixed 6px
+ * because at 1x the closest two pins in the project are 6.73px apart and
+ * anything wider hands a tap to the neighbouring unit. Magnifying the drawing
+ * multiplies that 6.73px gap while the targets stay put, so at 3x there is 20px
+ * between them — the difference between mouse work and a fingertip. Enlarging
+ * the targets instead would reintroduce the overlap this just fixed.
+ */
+const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
+
+function setZoom(next, focusPin) {
+  const wrap = $('planWrap');
+  const from = state.zoom || 1;
+  const to = Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], Math.max(1, next));
+  if (to === from) return;
+
+  /* Keep whatever the agent was looking at under the pointer. Without this the
+     view jumps to the top-left on every step and they have to find their unit
+     again — which is most of the reason a zoom control gets abandoned. */
+  const cx = (wrap.scrollLeft + wrap.clientWidth / 2) / from;
+  const cy = (wrap.scrollTop + wrap.clientHeight / 2) / from;
+
+  state.zoom = to;
+  document.documentElement.style.setProperty('--plan-zoom', to);
+  $('planZoomLevel').textContent = Math.round(to * 100) + '%';
+  $('planZoomIn').disabled = to >= ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  $('planZoomOut').disabled = to <= 1;
+  wrap.classList.toggle('zoomed', to > 1);
+
+  wrap.scrollLeft = cx * to - wrap.clientWidth / 2;
+  wrap.scrollTop = cy * to - wrap.clientHeight / 2;
+  if (focusPin) centreOnPin(focusPin);
+  hideTip();
+}
+
+/** Scroll a pin to the middle of the frame — used when zooming on a selection. */
+function centreOnPin(pinEl) {
+  const wrap = $('planWrap');
+  const r = wrap.getBoundingClientRect();
+  const p = pinEl.getBoundingClientRect();
+  wrap.scrollLeft += (p.left + p.width / 2) - (r.left + r.width / 2);
+  wrap.scrollTop += (p.top + p.height / 2) - (r.top + r.height / 2);
+}
+
+/** The next step up or down the ladder from wherever we are. */
+function stepZoom(dir) {
+  const now = state.zoom || 1;
+  const i = ZOOM_STEPS.findIndex((z) => z > now + 1e-6);
+  const next = dir > 0
+    ? (i === -1 ? now : ZOOM_STEPS[i])
+    : [...ZOOM_STEPS].reverse().find((z) => z < now - 1e-6) ?? 1;
+  const sel = state.unit && $('planPins').querySelector('.pin.on');
+  setZoom(next, sel);
 }
 
 function hideTip() { $('planTip').className = ''; }
@@ -753,6 +851,8 @@ $('btnOffer').onclick = async () => {
 })();
 
 $('btnRefresh').onclick = () => refresh();
+$('planZoomIn').onclick = () => stepZoom(+1);
+$('planZoomOut').onclick = () => stepZoom(-1);
 ['fltType', 'fltSort'].forEach((id) => { $(id).onchange = renderUnits; });
 
 // Coming back to the tab is the moment an agent is about to quote a price.

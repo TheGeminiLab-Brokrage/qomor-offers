@@ -111,20 +111,27 @@ const CONFIG = {
    * safe against the 9.5px median but still contested 46 pins against the true
    * 6.73px minimum, and was reported a third time as hard to select.
    *
-   * So the target is now a FIXED 6px rather than the dot plus 3. Six is under
-   * 6.73, which means no two targets touch anywhere in the project: a click
-   * either selects the pin under it or selects nothing. Missing and getting
-   * nothing is a far better failure than getting the neighbouring unit.
+   * So the target is 6px rather than the dot plus 3. Six is under 6.73, which
+   * means no two targets touch: a click either selects the pin under it or
+   * selects nothing. Missing and getting nothing is a far better failure than
+   * getting the neighbouring unit.
    *
    * The dot is 4 so it sits inside that target rather than spilling past its
    * own hit area. Larger is possible — the dots themselves do not merge until
    * 6.73 — but a dot wider than the target invites clicks on the part of it
    * that does not respond. Change both together or not at all.
    *
-   * The trade is real: this is mouse-precise, not finger-precise, and on a
-   * phone the unit list beside the drawing is the reliable way to choose.
-   * Fixing that properly means letting the drawing zoom, not resizing dots —
-   * three attempts have now confirmed there is no size that solves it.
+   * BOTH ARE MULTIPLIED BY THE PLAN ZOOM in the stylesheet, and these numbers
+   * are the values at 100%. That is what finally answers the phone: the gap
+   * between pins scales with the drawing, so scaling the target with it holds
+   * the same 6 : 6.73 ratio at every level — at 4x the target is 24px against a
+   * 26.9px gap, still with no overlap, and wide enough for a fingertip.
+   * The first version of the zoom held the target at a fixed 6px, reasoning
+   * that magnifying the drawing should push the pins apart instead of enlarging
+   * them. It does push them apart — and it leaves a 6px target adrift in 27px
+   * of dead space, so zooming in made the pin HARDER to hit while shrinking it
+   * to a speck against the enlarged rooms. Reported immediately. Do not
+   * reintroduce it.
    *
    * The pin tool has a slider that previews any value against the real drawing
    * and prints the number to paste back here.
@@ -193,12 +200,37 @@ const CONFIG = {
    * Ground Plaza sits below it and is not sold (hypermarket, showroom, kids
    * area) — it has no rows in the sheet. GP is a placeholder code: no Ground
    * Plaza unit exists to read a real one from. */
+  /* GPL, not GP: the workbook codes its ground-floor units GPL-001..GPL-178,
+     so the code here has to be what the sheet actually writes or every row
+     mismatches. It is also the one floor whose codes carry NO building letter
+     — the ground plaza is a single continuous plate, numbered straight through,
+     not four wings each restarting at 001. See parseUnitCode.
+
+     WARNING: `sellable` IS INERT. Nothing reads it — the name collides with
+     app.js's own sellable(building, floor) function, which is a different thing
+     entirely, so it reads like a switch and is really a comment. Flipping it
+     changes nothing. Left in place only because it documents intent; delete it
+     or make it real, but do not trust it. (The same trap as `sharedWith` in
+     plan.js, which sat as inert data until 2026-08-16.)
+
+     What ACTUALLY keeps the ground floor dark is the data: all 181 rows arrive
+     with dashes in every price column and an empty Availability cell, and the
+     parser fails closed on both. Ops filling those in is enough to make the
+     units parse — but NOT enough to make them visible, because the app is
+     navigated building-first and these units have no building. See unitsIn(). */
+  /* hasBuildings: false marks a floor that is ONE CONTINUOUS PLATE with no
+     wings. Unlike `sellable` above it is read — by floorHasBuildings() in
+     app.js — and it is what makes the ground plaza reachable: the app is
+     navigated building-first, so a floor whose units belong to no building
+     would otherwise match no selection and stay invisible however well priced.
+     On such a floor the building filter is skipped, and the floor is listed
+     under EVERY building, on the user's decision 2026-08-17. */
   floors: [
-    { code: 'GP', name: 'Ground Plaza', sellable: false },
-    { code: 'SP', name: 'Sky Plaza',    sellable: true  },
-    { code: 'FT', name: 'First Floor',  sellable: true  },
-    { code: 'SE', name: 'Second Floor', sellable: true  },
-    { code: 'TH', name: 'Third Floor',  sellable: true  },
+    { code: 'GPL', name: 'Ground Plaza', sellable: false, hasBuildings: false },
+    { code: 'SP',  name: 'Sky Plaza',    sellable: true  },
+    { code: 'FT',  name: 'First Floor',  sellable: true  },
+    { code: 'SE',  name: 'Second Floor', sellable: true  },
+    { code: 'TH',  name: 'Third Floor',  sellable: true  },
   ],
 
   /* Letters corrected by the client 2026-08-12; an earlier guess had them

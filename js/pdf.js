@@ -1013,7 +1013,16 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
 
   const money = (n) => `${fmt(n)} ${D('currency', CONFIG.currency)}`;
   const bId = unit.building;
-  const bNameEn = (CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`;
+  /* A unit on a floor with no wings has no building at all — the ground plaza
+     is one continuous plate. Its PLACE is the floor, so the floor's name stands
+     in wherever a building name would go, and the pages that only make sense
+     for a wing (the masterplan highlight, the "Building" stat) are skipped
+     below. Without this the offer read "Building null". */
+  /* unit.floorName directly, NOT the floorName const below — that is declared
+     further down and reading it here is a temporal dead zone, i.e. a crash. */
+  const bNameEn = !bId
+    ? (unit.floorName || unit.floorCode)
+    : ((CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`);
   /* "Building Q" is a label with a letter in it, not a name — the letter is the
      client's own and stays Latin, the word around it is translated. Anything
      that is not of that shape falls through unchanged, same rule as everywhere
@@ -1307,7 +1316,12 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   statAt(S('offer.prepared', null, 'Prepared'), today, M + 232, PW - M - M - 232, 15, PAPER);
 
   /* ---------- 8. your building ---------- */
-  const master = A.masterplan;
+  /* Skipped entirely for a unit with no building. This page exists to point at
+     one wing on the masterplan render; the ground plaza is not a wing and has
+     no polygon to highlight, so the page would show the render with nothing
+     marked and a caption naming a building that does not exist. The floor page
+     that follows still shows the customer exactly where the unit is. */
+  const master = bId && A.masterplan;
   if (master) {
     newPage(S('page.building', null, 'Your building'), bName);
     const iy = 26, ih = 148;
@@ -1408,23 +1422,32 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
       const rect = containRect(planImg, M, iy, iw, ih);
       const alias = `plan-${unit.floorCode}`;
 
-      doc.saveGraphicsState();
-      clipTo(doc, M, iy, iw, ih);
-
-      doc.setGState(new doc.GState({ opacity: PLAN_FADED }));
-      doc.addImage(planImg.data, planImg.format, rect.x, rect.y, rect.w, rect.h, alias, 'FAST');
-      doc.setGState(new doc.GState({ opacity: 1 }));
-
       /* A traced shape wins over the pins' bounding box.
        *
        * The pins only bound the ROOMS, so the box they give stops at the middle
        * of the outermost ones and misses walls, corridors and anything
        * unpinned — and for a building that wraps a courtyard a box is the wrong
        * figure entirely. FOCUS_SHAPES holds a real outline for every building
-       * on every floor now; the pin box survives only as a fallback. */
-      const shape = focusShape(unit.floorCode, bId);
-      const bounds = shape ? null : buildingBounds(planDef, bId);
+       * on every floor now; the pin box survives only as a fallback.
+       *
+       * No building means nothing to single out: the ground plaza IS the whole
+       * drawing. Guarded because buildingBounds() reads bId.length and would
+       * throw on null, and because a box around every pin is the whole plate
+       * anyway — a fade with nothing left unfaded. */
+      const shape = bId ? focusShape(unit.floorCode, bId) : null;
+      const bounds = (bId && !shape) ? buildingBounds(planDef, bId) : null;
       const highlighted = !!(shape || bounds);
+
+      doc.saveGraphicsState();
+      clipTo(doc, M, iy, iw, ih);
+
+      /* Fade ONLY when something is going to be redrawn sharp on top. The two
+         passes are a pair: dimming the plate and then never lifting the dim
+         would hand the customer a washed-out drawing of the floor they are
+         buying on, which is exactly what happens on a floor with no wings. */
+      doc.setGState(new doc.GState({ opacity: highlighted ? PLAN_FADED : 1 }));
+      doc.addImage(planImg.data, planImg.format, rect.x, rect.y, rect.w, rect.h, alias, 'FAST');
+      doc.setGState(new doc.GState({ opacity: 1 }));
       if (highlighted) {
         doc.saveGraphicsState();
         if (shape) clipToShape(doc, shape, rect);
@@ -1509,7 +1532,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
     const k = column(x, 50);
     stat(doc, label, value, k.x, y + 8, 13, INK, [k.x, k.x + k.w]);
   };
-  unitStat(S('unit.building', null, 'Building'), bName, M);
+  /* On a floor with no wings the building stat would repeat the floor stat
+     beside it — "Ground Plaza / Ground Plaza". Show the project instead, so the
+     row keeps its five columns and says something true. */
+  unitStat(bId ? S('unit.building', null, 'Building') : S('proj.name', null, 'Project'),
+           bId ? bName : D('name', CONFIG.name), M);
   unitStat(S('unit.floor', null, 'Floor'), floorName, M + 52);
   unitStat(S('unit.type', null, 'Type'), D('type', unit.type) || '—', M + 104);
   /* Gross area only — the client instructed 2026-08-12 that the sheet's net
