@@ -374,12 +374,12 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
    painted. Sizes are in px, not a fraction of the drawing, so they do not
    shrink with the image on a phone — which is exactly where the tap matters. */
 #planPins .pin{
-  /* The target is the dot plus a small margin — NOT a fixed 34px floor. Pins on
-     this drawing sit about 9px apart on a desktop, so a target wider than that
-     overlaps its neighbours and the tap lands on whichever pin was drawn last.
-     See CONFIG.pinDotPx for the whole trade-off. */
+  /* The target is the dot plus 3px — NOT a fixed floor. Pins on this drawing
+     sit 9.5px apart on a desktop, so anything wider overlaps its neighbours and
+     the tap lands on whichever pin was drawn last rather than the one under the
+     pointer. 5 + 3 = 8 fits inside that. See CONFIG.pinDotPx for the sums. */
   position:absolute;
-  width:calc(var(--pin-dot,7px) + 5px);height:calc(var(--pin-dot,7px) + 5px);
+  width:calc(var(--pin-dot,5px) + 3px);height:calc(var(--pin-dot,5px) + 3px);
   transform:translate(-50%,-50%);
   margin:0;padding:0;border:0;background:none;cursor:pointer;
   display:grid;place-items:center;-webkit-tap-highlight-color:transparent;
@@ -387,7 +387,7 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 #planPins .pin::before{
   /* --pin-dot is set from CONFIG.pinDotPx at startup; the fallback keeps the
      pins visible if that ever fails to apply. */
-  content:'';width:var(--pin-dot,13px);height:var(--pin-dot,13px);border-radius:50%;
+  content:'';width:var(--pin-dot,5px);height:var(--pin-dot,5px);border-radius:50%;
   border:1.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55);
   transition:width .15s,height .15s;
 }
@@ -400,11 +400,11 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
 /* Hover and selection grow from whatever size the dot is set to, so a bigger
    --pin-dot does not make the highlight smaller than the dot itself. */
 #planPins .pin.available:hover::before{
-  width:calc(var(--pin-dot,13px) + 4px);height:calc(var(--pin-dot,13px) + 4px);
+  width:calc(var(--pin-dot,5px) + 4px);height:calc(var(--pin-dot,5px) + 4px);
 }
 #planPins .pin.on::before{
   background:#FF9E3D;border-color:#1A0E02;border-width:2.5px;
-  width:calc(var(--pin-dot,13px) + 6px);height:calc(var(--pin-dot,13px) + 6px);
+  width:calc(var(--pin-dot,5px) + 6px);height:calc(var(--pin-dot,5px) + 6px);
 }
 /* Keyboard focus must be visible — the pins are real buttons and tabbable. */
 #planPins .pin:focus-visible{outline:none}

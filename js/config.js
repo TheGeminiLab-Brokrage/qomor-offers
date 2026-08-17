@@ -94,15 +94,19 @@ const CONFIG = {
    * How big the dot on the floor plan is, in screen pixels, measured across
    * (its diameter). CHANGE THIS ONE NUMBER to resize every pin in the app.
    *
-   * 7, not 13. At 13 the dots were wider than the rooms under them: the drawing
-   * is 2412px shown in about 730px, so a room roughly 30px wide on the drawing
-   * lands at about 9px on screen. A 13px dot with a 34px tap target therefore
-   * covered three or four units at once and selecting a particular one was
-   * guesswork — the client's report, and confirmed by the arithmetic.
+   * 5, measured rather than guessed. The drawing is 2412px wide shown in about
+   * 730px of a 1080px page, so it renders at 0.303 — and adjacent pins in a row
+   * are 0.0130 apart, which is 9.5px ON SCREEN. That number is the whole
+   * constraint: the dot and its target both have to fit inside it or the pins
+   * overlap and a click lands on a neighbour.
    *
-   * The tap target is now the dot plus a few pixels rather than a 34px floor,
-   * for the same reason: a target wider than the spacing between two pins hands
-   * the tap to whichever pin was drawn last, not the one under the finger.
+   * The history is worth keeping. 13 with a 34px target covered three or four
+   * units at once. 7 with a 12px target still exceeded 9.5 and was still hard
+   * to hit — reported twice. 5 with an 8px target finally sits under it.
+   *
+   * The tap target is the dot plus 3px, not a fixed floor, for the same reason:
+   * a target wider than the spacing hands the tap to whichever pin was drawn
+   * last, not the one under the pointer.
    * The trade is real — this is now mouse-precise rather than finger-precise,
    * and on a phone the unit list beside the drawing is the reliable way to
    * choose. Fixing that properly means letting the drawing zoom, not making the
@@ -114,7 +118,7 @@ const CONFIG = {
    * Sizes are in px rather than a fraction of the drawing so they hold steady
    * on a phone, where the drawing shrinks but the finger does not. Diameters,
    * not radii, because that is what the tool shows. */
-  pinDotPx: 7,
+  pinDotPx: 5,
 
   /* --------------------------------------------------------------- pricing --
    * Verified against all 530 rows of the Availabilty tab, zero exceptions:
