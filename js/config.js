@@ -94,23 +94,37 @@ const CONFIG = {
    * How big the dot on the floor plan is, in screen pixels, measured across
    * (its diameter). CHANGE THIS ONE NUMBER to resize every pin in the app.
    *
-   * 5, measured rather than guessed. The drawing is 2412px wide shown in about
-   * 730px of a 1080px page, so it renders at 0.303 — and adjacent pins in a row
-   * are 0.0130 apart, which is 9.5px ON SCREEN. That number is the whole
-   * constraint: the dot and its target both have to fit inside it or the pins
-   * overlap and a click lands on a neighbour.
+   * 4, with a tap target of 6px fixed in the stylesheet. The drawing is 2412px
+   * wide shown in 732px of a 1080px page (1080 - 44 padding - 290 unit panel -
+   * 14 gap), so it renders at 0.3035.
    *
-   * The history is worth keeping. 13 with a 34px target covered three or four
-   * units at once. 7 with a 12px target still exceeded 9.5 and was still hard
-   * to hit — reported twice. 5 with an 8px target finally sits under it.
+   * THE CONSTRAINT IS THE CLOSEST PAIR, NOT THE AVERAGE ONE. Every earlier
+   * attempt here was sized against 9.5px, which is the MEDIAN gap between
+   * neighbouring pins. The real minimum, measured across all four floors, is
+   * 6.73px — QSE-053 and QSE-054, on Q's vertical spine. Anything wider than
+   * that overlaps somewhere, and where targets overlap the click goes to
+   * whichever pin was drawn last rather than the one under the pointer.
    *
-   * The tap target is the dot plus 3px, not a fixed floor, for the same reason:
-   * a target wider than the spacing hands the tap to whichever pin was drawn
-   * last, not the one under the pointer.
-   * The trade is real — this is now mouse-precise rather than finger-precise,
-   * and on a phone the unit list beside the drawing is the reliable way to
-   * choose. Fixing that properly means letting the drawing zoom, not making the
-   * dots bigger.
+   * The history is worth keeping, because every step of it was sized against
+   * the wrong number. 13 with a 34px target covered three or four units at
+   * once. 7 with a 12px target still overlapped. 5 with an 8px target looked
+   * safe against the 9.5px median but still contested 46 pins against the true
+   * 6.73px minimum, and was reported a third time as hard to select.
+   *
+   * So the target is now a FIXED 6px rather than the dot plus 3. Six is under
+   * 6.73, which means no two targets touch anywhere in the project: a click
+   * either selects the pin under it or selects nothing. Missing and getting
+   * nothing is a far better failure than getting the neighbouring unit.
+   *
+   * The dot is 4 so it sits inside that target rather than spilling past its
+   * own hit area. Larger is possible — the dots themselves do not merge until
+   * 6.73 — but a dot wider than the target invites clicks on the part of it
+   * that does not respond. Change both together or not at all.
+   *
+   * The trade is real: this is mouse-precise, not finger-precise, and on a
+   * phone the unit list beside the drawing is the reliable way to choose.
+   * Fixing that properly means letting the drawing zoom, not resizing dots —
+   * three attempts have now confirmed there is no size that solves it.
    *
    * The pin tool has a slider that previews any value against the real drawing
    * and prints the number to paste back here.
@@ -118,7 +132,7 @@ const CONFIG = {
    * Sizes are in px rather than a fraction of the drawing so they hold steady
    * on a phone, where the drawing shrinks but the finger does not. Diameters,
    * not radii, because that is what the tool shows. */
-  pinDotPx: 5,
+  pinDotPx: 4,
 
   /* --------------------------------------------------------------- pricing --
    * Verified against all 530 rows of the Availabilty tab, zero exceptions:
