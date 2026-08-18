@@ -1800,19 +1800,95 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   tStart(doc, S('pay.total', null, 'Total payable'), M + 5, BOTTOM + 6.4, M + 5, PW - M - 3);
   tEnd(doc, money(summary.totalPayable), PW - M - 3, BOTTOM + 6.4, M + 5, PW - M - 3);
 
-  /* THE PAYMENT PLAN IS THE LAST PAGE, on the user's instruction 2026-08-15.
-     A terms page used to follow it, carrying the ASSUMPTIONS list, a generated-on
-     disclaimer and a closing credits card with two live links. It is gone.
+  /* ---------- the terms page, last ----------
+     Removed 2026-08-15 so the payment plan closed the document; restored
+     2026-08-18 because the client asked for it back.
 
-     What was on it and where it went:
-       · "Indicative offer — subject to availability at the time of contract."
-         is in the footer of EVERY page, so the disclaimer itself survives.
-       · The ASSUMPTIONS list is still on screen in the app, in both languages.
-       · The two links did NOT survive — in particular "View this offer online",
-         which deep-linked back to the app so a customer sitting on the offer for
-         a week reopened it at today's price rather than a stale sheet of paper.
-         That is a real loss; offerShareText() still carries the link in the
-         WhatsApp message, which is the only place it now appears. */
+     It prints TERMS_ORDER, not ASSUMPTIONS — four of the five. The rounding
+     note stays off the page; see the comment on TERMS_ORDER in config.js.
+
+     Still not restored: the two live links the old version carried, in
+     particular "View this offer online", which deep-linked back to the app so a
+     customer sitting on the offer for a week reopened it at today's price
+     rather than a stale sheet of paper. offerShareText() still carries that
+     link in the WhatsApp message, which remains the only place it appears. */
+  newPage(S('page.terms', null, 'Terms'), unit.code);
+  {
+    let ty = sectionTitle(doc, S('terms.title', null, 'What this offer assumes'), 36);
+    ty += 3;
+
+    /* Wrap on the LOGICAL string but measure the SHAPED one. Arabic is reshaped
+       into presentation forms by TX() at draw time, and those glyphs are not the
+       width of the source characters — measuring the source would wrap Arabic in
+       the wrong place. Breaking the logical text and letting each line shape
+       itself is also the only order that keeps the reordering correct: a line is
+       reversed within itself, so a line split after shaping would scramble. */
+    const wrapLines = (text, maxWidth) => {
+      const words = String(text).split(/\s+/).filter(Boolean);
+      const out = [];
+      let cur = '';
+      for (const w of words) {
+        const next = cur ? `${cur} ${w}` : w;
+        if (cur && doc.getTextWidth(TX(next)) > maxWidth) { out.push(cur); cur = w; }
+        else cur = next;
+      }
+      if (cur) out.push(cur);
+      return out;
+    };
+
+    const textX = M + 4.5;
+    const textW = PW - 2 * M - 4.5;
+    doc.setFont(SANS, 'normal').setFontSize(8.6);
+    for (const key of TERMS_ORDER) {
+      const lines = wrapLines(S(`terms.${key}`, null, ASSUMPTION_TEXT[key]), textW);
+      bullet(doc, M + 1, ty, GOLD);
+      setText(doc, INK);
+      lines.forEach((line, i) => tStart(doc, line, textX, ty + i * 4.6, M, PW - M));
+      ty += lines.length * 4.6 + 3.4;
+    }
+
+    ty += 5;
+    doc.setFont(SANS, 'bold').setFontSize(8.6);
+    setText(doc, INK);
+    tStart(doc, S('terms.avail', null, 'Prices and availability'), M, ty, M, PW - M);
+    ty += 5.4;
+
+    doc.setFont(SANS, 'normal').setFontSize(8.6);
+    setText(doc, MUTED);
+    const availEn = `This offer was generated on ${today} from the live inventory. `
+      + 'Prices, the per-unit discount and availability can change without notice, '
+      + 'and the unit is only reserved once a reservation form is signed and the '
+      + 'down payment is received.';
+    for (const [i, line] of wrapLines(
+          S('terms.availBody', { date: today }, availEn), PW - 2 * M).entries()) {
+      tStart(doc, line, M, ty + i * 4.6, M, PW - M);
+    }
+
+    /* The credits sit on the baseline above the footer rule, where the eye
+       lands last. Names of real companies, so they stay Latin in both
+       languages — same rule as the building letters. The words BETWEEN them do
+       not: built from English connectors wrapped around Arabic names, the line
+       came out reordered, because bidi moves each Latin run to where a
+       left-to-right reader would want it and the Arabic reader gets
+       "الشحري للتطوير العقاري Developed by". Both lines are whole strings in
+       the dictionary now, so the connectors are Arabic in an Arabic offer and
+       only the names stay Latin. */
+    doc.setFont(SANS, 'normal').setFontSize(7.4);
+    setText(doc, MUTED);
+    tStart(doc,
+           S('terms.credits', { name: NAME, dev: DEV, consultant: CONFIG.consultant },
+             `${NAME} · Developed by ${DEV} · Architecture by ${CONFIG.consultant}`),
+           M, BOTTOM - 8, M, PW - M);
+    if ((CONFIG.partners || []).length) {
+      /* The conjunction is a word too. Joining on a literal " and " would put
+         one English word back inside the Arabic sentence this key exists to
+         fix. */
+      const partners = CONFIG.partners.join(S('terms.and', null, ' and '));
+      tStart(doc,
+             S('terms.partners', { partners }, `In partnership with ${partners}`),
+             M, BOTTOM - 3.6, M, PW - M);
+    }
+  }
 
   /* __arabicParser__ hangs off the shared jsPDF.API, so put it back before the
      next export — an English offer has no use for a disarmed Arabic parser, but

@@ -99,14 +99,42 @@ for (const k of en) {
 /* The assumptions are a list, not a key/value table, so they are held to each
  * other by COUNT. Getting this wrong is silent in the app — tAssumptions()
  * falls back to the whole English list, which looks like the translation was
- * never done rather than like a list that drifted out of step. */
-const countList = (src, name) => {
-  const m = src.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n\\];`));
-  if (!m) throw new Error(`no ${name} array found`);
-  return (m[1].match(/^\s*'/gm) || []).length;
-};
-const nEn = countList(read('js/config.js'), 'ASSUMPTIONS');
-const nAr = countList(i18n, 'ASSUMPTIONS_AR');
+ * never done rather than like a list that drifted out of step.
+ *
+ * REQUIRED, not scraped. Both lists used to be counted by a regex over the
+ * source, and on 2026-08-18 ASSUMPTIONS stopped being an array literal — it is
+ * derived from ASSUMPTION_ORDER over ASSUMPTION_TEXT now, so the pattern
+ * matched nothing and threw. That took the whole suite down with it, because
+ * test.js runs this file. Loading the modules cannot drift from the way they
+ * are actually built. */
+const { ASSUMPTIONS, ASSUMPTION_TEXT, ASSUMPTION_ORDER, TERMS_ORDER } = require('../js/config.js');
+const { ASSUMPTIONS_AR } = require('../js/i18n.js');
+const nEn = ASSUMPTIONS.length;
+const nAr = ASSUMPTIONS_AR.length;
+
+/* ASSUMPTION_ORDER is the only thing that decides what prints. A key in it with
+ * no sentence behind it yields undefined, which reaches the page as the word
+ * "undefined" rather than as a blank someone would catch in review. */
+for (const key of ASSUMPTION_ORDER) {
+  if (!ASSUMPTION_TEXT[key]) {
+    problems.push(`ASSUMPTION_ORDER names "${key}", which ASSUMPTION_TEXT does not define`);
+  }
+}
+
+/* The customer's terms page, in Arabic. pt() returns the KEY when it misses, so
+ * an untranslated term prints the literal "terms.noFees" on a page the customer
+ * reads. Nothing else checks pdf-ar.js against the list that drives the page. */
+const { PDF_STRINGS } = require('../js/pdf-ar.js');
+const termKeys = [
+  ...TERMS_ORDER.map((k) => `terms.${k}`),
+  'page.terms', 'terms.title', 'terms.avail', 'terms.availBody',
+  'terms.credits', 'terms.partners', 'terms.and',
+];
+for (const key of termKeys) {
+  if (PDF_STRINGS[key] === undefined) {
+    problems.push(`the terms page asks for ${key}, which pdf-ar.js does not define`);
+  }
+}
 if (nEn !== nAr) {
   problems.push(`ASSUMPTIONS has ${nEn} entries but ASSUMPTIONS_AR has ${nAr} — `
     + 'the Arabic footer falls back to English entirely until they match');

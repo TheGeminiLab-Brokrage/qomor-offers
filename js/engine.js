@@ -43,11 +43,22 @@ function addMonths(date, months) {
 const fmtDate = (d) =>
   d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-/** The milestone top-ups that apply to a plan, as a quarter -> fraction map. */
+/** The milestone top-ups that apply to a plan, as a quarter -> fraction map.
+ *
+ * `plan.milestones` is one of:
+ *   false      no milestones,
+ *   true       the standard set in CONFIG.milestones (5% Q4, 5% Q8, 10% Q12),
+ *   an array   this plan's OWN set — the 6-year plan carries a single 10% at
+ *              delivery, which is not the standard three-milestone shape.
+ *
+ * Whatever comes back, levelRate() subtracts its total from the amount spread
+ * over the instalments, so the plan still foots to exactly 100%. A milestone can
+ * never be stacked on top of an already-complete schedule. */
 function milestonesFor(plan) {
   if (!plan.milestones) return {};
+  const list = Array.isArray(plan.milestones) ? plan.milestones : CONFIG.milestones;
   const map = {};
-  for (const m of CONFIG.milestones) {
+  for (const m of list) {
     if (m.quarter <= plan.instalments) map[m.quarter] = m.pct;
   }
   return map;

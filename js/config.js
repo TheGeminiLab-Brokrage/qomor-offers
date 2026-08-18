@@ -179,7 +179,16 @@ const CONFIG = {
   ],
   plans: [
     { id: '4y',  label: '4 years',  down: 0.0625, instalments: 15, milestones: false },
-    { id: '6y',  label: '6 years',  down: 0.10,   instalments: 24, milestones: false },
+    /* A single 10% at DELIVERY, added on the client's instruction 2026-08-18.
+       Delivery is month 36 and instalments are quarterly, so that is quarter 12
+       — the same quarter the 9% maintenance falls due, which is deliberate:
+       both land at handover.
+       Given as this plan's own array rather than `true`, because `true` means
+       the standard 5% / 5% / 10% at quarters 4, 8 and 12, and this plan takes
+       only the last of those. The level instalment drops from 3.75% to 3.333%
+       to absorb it, so the plan still foots to exactly 100%. */
+    { id: '6y',  label: '6 years',  down: 0.10,   instalments: 24,
+      milestones: [{ quarter: 12, pct: 0.10 }] },
     { id: '7y',  label: '7 years',  down: 0.20,   instalments: 28, milestones: true  },
     { id: '8y',  label: '8 years',  down: 0.30,   instalments: 32, milestones: true  },
     { id: '9y',  label: '9 years',  down: 0.40,   instalments: 36, milestones: true  },
@@ -357,17 +366,39 @@ const CONFIG = {
 
 /* Assumptions a signed sample offer would settle. Surfaced in the UI and
  * printed by the test suite so they cannot quietly become fact. */
-const ASSUMPTIONS = [
-  'The instalment plan is calculated on the sheet\'s Final Price (after the per-unit discount), not on the Total Unit Price.',
-  'The 9% maintenance is calculated on the same Final Price, and is a single payment at month 36.',
-  'The first quarterly instalment falls 3 months after contract.',
-  'Rounding drift is absorbed by the final instalment so the schedule sums exactly.',
+const ASSUMPTION_TEXT = {
+  finalPrice: 'The instalment plan is calculated on the sheet\'s Final Price (after the per-unit discount), not on the Total Unit Price.',
+  maintenance: 'The 9% maintenance is calculated on the same Final Price, and is a single payment at month 36.',
+  firstInstalment: 'The first quarterly instalment falls 3 months after contract.',
+  rounding: 'Rounding drift is absorbed by the final instalment so the schedule sums exactly.',
   /* Keep the Arabic inside its own brackets. The PDF strips anything jsPDF's
    * WinAnsi fonts cannot encode, and a bracketed run strips to "()" which the
    * sanitiser then removes cleanly — inline Arabic would leave "mention / —"
    * stranded mid-sentence on the printed offer. */
-  'No club, parking, garage, storage or admin fee is added. The plan tabs list garage and storage (سعر الجراج / سعر المخزن) as separate lines that are currently #N/A.',
-];
+  noFees: 'No club, parking, garage, storage or admin fee is added. The plan tabs list garage and storage (سعر الجراج / سعر المخزن) as separate lines that are currently #N/A.',
+};
+
+/* The order they are shown in, everywhere. */
+const ASSUMPTION_ORDER = ['finalPrice', 'maintenance', 'firstInstalment', 'rounding', 'noFees'];
+
+/* Unchanged in shape and order — the app prints this on screen, the tests print
+ * it after every run, and ASSUMPTIONS_AR in i18n.js is held against it by
+ * length. Derived from the map so there is one copy of each sentence. */
+const ASSUMPTIONS = ASSUMPTION_ORDER.map((k) => ASSUMPTION_TEXT[k]);
+
+/* WHAT THE CUSTOMER'S TERMS PAGE PRINTS — everything except `rounding`.
+ *
+ * That one is an internal integrity note, not a term of sale: it says the last
+ * instalment absorbs sub-pound drift so the schedule foots exactly. True, and
+ * worth keeping in front of us until a signed sample offer confirms it, but it
+ * describes our arithmetic rather than anything the buyer agrees to, and on the
+ * page it read as an admission that the numbers need adjusting. Dropped from
+ * print on the client's instruction 2026-08-18; kept in ASSUMPTIONS above so
+ * the app and the tests still carry it.
+ *
+ * Keyed, not sliced by index, so reordering the list above cannot silently
+ * change which term the customer sees. */
+const TERMS_ORDER = ASSUMPTION_ORDER.filter((k) => k !== 'rounding');
 
 /* RULED BY THE CLIENT 2026-08-12: the SHEET is the authority for what a unit is
  * and where it sits. Whether a unit is admin or a clinic comes from its Type
@@ -381,4 +412,8 @@ const ASSUMPTIONS = [
  * "Second Floor" is what the app shows. Do not re-derive this from the
  * marketing material. */
 
-if (typeof module !== 'undefined') module.exports = { CONFIG, ASSUMPTIONS };
+if (typeof module !== 'undefined') {
+  module.exports = {
+    CONFIG, ASSUMPTIONS, ASSUMPTION_TEXT, ASSUMPTION_ORDER, TERMS_ORDER,
+  };
+}

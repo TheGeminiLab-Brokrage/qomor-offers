@@ -58,6 +58,39 @@ const PDF_STRINGS = {
   'page.unit': 'الوحدة',
   'page.payment': 'خطة السداد',
 
+  /* The terms page, restored 2026-08-18 at the client's request. These four
+     mirror the keys in CONFIG.TERMS_ORDER — `rounding` is absent from both, so
+     there is no term here that the customer never sees, and none missing that
+     they do. */
+  'page.terms': 'الشروط',
+  'terms.title': 'ما يفترضه هذا العرض',
+  'terms.finalPrice': 'تُحتسب خطة الأقساط على السعر النهائي بعد خصم الوحدة، وليس على إجمالي سعر الوحدة.',
+  /* WESTERN DIGITS, "9%" and "36" — not ٩٪ and ٣٦.
+     Two reasons, and either alone is decisive. The embedded Arabic font has no
+     Arabic-Indic digits, so they are dropped by the sanitiser: the first draft
+     of this line printed "تُحتسب الصيانة بنسبة  على السعر النهائي" with the
+     figure simply missing, which is worse than wrong because it still reads as
+     a sentence. And the client's standing rule is that numbers stay Western so
+     they match the contract the customer signs. */
+  'terms.maintenance': 'تُحتسب الصيانة بنسبة 9% على السعر النهائي نفسه، وتُسدَّد دفعة واحدة في الشهر 36.',
+  'terms.firstInstalment': 'يُستحق القسط الربع سنوي الأول بعد ثلاثة أشهر من التعاقد.',
+  'terms.noFees': 'لا تُضاف رسوم نادي أو انتظار أو جراج أو مخزن أو رسوم إدارية. يُدرج سعر الجراج وسعر المخزن في جداول الخطة كبنود منفصلة غير متاحة حالياً.',
+  'terms.avail': 'الأسعار والإتاحة',
+  'terms.availBody': 'صدر هذا العرض في {date} من المخزون المباشر. قد تتغير الأسعار وخصم الوحدة والإتاحة دون إشعار، ولا تُحجز الوحدة إلا بعد توقيع استمارة الحجز وسداد الدفعة المقدمة.',
+
+  /* The credits need Arabic CONNECTORS, not just Arabic names. Built from
+     English words ("Developed by", "Architecture by") around Arabic names, the
+     line came out reordered and unreadable — the bidi algorithm moves the Latin
+     runs, and the reader gets "الشحري للتطوير العقاري Developed by". The
+     company names themselves stay Latin where they have no Arabic form, which
+     is the same rule the building letters follow. */
+  'terms.credits': '{name} · تطوير {dev} · تصميم معماري {consultant}',
+  'terms.partners': 'بالشراكة مع {partners}',
+  /* Spaced, not the usual prefixed و. The conjunction normally attaches to
+     the word after it, but both partner names are Latin and "وKunuz" glues an
+     Arabic letter onto a Latin word, which shapes badly and reads worse. */
+  'terms.and': ' و ',
+
   'foot.indicative': 'عرض استرشادي — مرهون بالإتاحة وقت التعاقد.',
   'foot.unit': '{name} · {location} · وحدة {code}',
 

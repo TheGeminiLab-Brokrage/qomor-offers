@@ -54,6 +54,16 @@ section('unit codes');
 }
 
 /* ------------------------------------------------------------------ plans -- */
+/* What each plan's milestones should be, stated as MONTHS and independently of
+   how config happens to express them — the point of a test is to disagree with
+   the implementation when the implementation is wrong.
+   6y carries a single 10% at delivery on the client's instruction 2026-08-18;
+   the others are the standard 5% / 5% / 10% at quarters 4, 8 and 12. */
+const EXPECTED_MILESTONE_MONTHS = {
+  '4y': [], '6y': [36], '7y': [12, 24, 36],
+  '8y': [12, 24, 36], '9y': [12, 24, 36], '10y': [12, 24, 36],
+};
+
 section('plan definitions foot to 100%');
 for (const plan of G.CONFIG.plans) {
   const ms = G.milestonesFor(plan);
@@ -62,14 +72,15 @@ for (const plan of G.CONFIG.plans) {
   const total = plan.down + msTotal + level * plan.instalments;
   near(total, 1, 1e-12, `${plan.label}: down + milestones + instalments = 100%`);
   ok(level > 0, `${plan.label}: level instalment rate is positive`);
-  eq(Object.keys(ms).length, plan.milestones ? 3 : 0, `${plan.label}: milestone count`);
+  eq(Object.keys(ms).length, EXPECTED_MILESTONE_MONTHS[plan.id].length,
+     `${plan.label}: milestone count`);
 }
 
 /* Against the client's own displayed percentages. Their tabs are rounded to
  * 2dp, so we assert the derived rate matches to within half a displayed unit. */
 section('derived rates match the client tabs');
 {
-  const expected = { '4y': 6.25, '6y': 3.75, '7y': 2.14, '8y': 1.56, '9y': 1.11, '10y': 0.75 };
+  const expected = { '4y': 6.25, '6y': 3.33, '7y': 2.14, '8y': 1.56, '9y': 1.11, '10y': 0.75 };
   for (const plan of G.CONFIG.plans) {
     const shown = +(G.levelRate(plan) * 100).toFixed(2);
     near(shown, expected[plan.id], 0.01, `${plan.label}: quarterly rate ≈ ${expected[plan.id]}%`);
@@ -113,12 +124,9 @@ section('every plan × representative units sums exactly');
 
       // Milestones land where the client's tabs put them.
       const milestoneMonths = rows.filter((r) => r.milestone).map((r) => r.month);
-      if (plan.milestones) {
-        ok(milestoneMonths.join(',') === '12,24,36',
-          `${label}: milestones at months 12/24/36 — got ${milestoneMonths.join(',')}`);
-      } else {
-        eq(milestoneMonths.length, 0, `${label}: no milestones`);
-      }
+      const wantMonths = EXPECTED_MILESTONE_MONTHS[plan.id].join(',');
+      ok(milestoneMonths.join(',') === wantMonths,
+        `${label}: milestones at months ${wantMonths || '(none)'} — got ${milestoneMonths.join(',') || '(none)'}`);
     }
   }
 }
