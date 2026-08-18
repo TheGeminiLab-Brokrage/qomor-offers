@@ -993,7 +993,17 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
 
   const { rows, summary } = buildSchedule(unit, plan, contractDate);
   /* Dates stay en-GB in both languages — the client's standing instruction is
-     that every figure on the offer matches the contract the customer signs. */
+     that every figure on the offer matches the contract the customer signs.
+
+     That covers the DIGITS. The month NAME is English too, so the Arabic
+     terms page reads "صدر هذا العرض في 18 August 2026", which looks like a
+     missed translation and is not one: the rendered Arabic page was reviewed
+     on 2026-08-18 and the English date accepted as it stands. Leave it until
+     the client asks otherwise.
+
+     If they ever do, note the trap — ar-EG numbers in Arabic-Indic digits
+     (٢٠٢٦), which the embedded font does not carry and drops in silence, so
+     it would need ar-EG-u-nu-latn rather than a bare locale swap. */
   const today = contractDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const isClinic = /medical/i.test(unit.type || '');
   const art = CONFIG.art || {};
