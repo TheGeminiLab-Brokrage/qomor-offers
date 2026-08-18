@@ -179,7 +179,10 @@ const CONFIG = {
   ],
   plans: [
     { id: '4y',  label: '4 years',  down: 0.0625, instalments: 15, milestones: false },
-    /* A single 10% at DELIVERY, added on the client's instruction 2026-08-18.
+    /* A single 10% at DELIVERY. The client adjusted this plan and added it,
+       instructed and CONFIRMED 2026-08-18 — they were asked specifically
+       whether the 10% comes out of the 100% or on top of it, and it comes
+       out: the quarterly instalment absorbs it. Do not reopen this.
        Delivery is month 36 and instalments are quarterly, so that is quarter 12
        — the same quarter the 9% maintenance falls due, which is deliberate:
        both land at handover.
