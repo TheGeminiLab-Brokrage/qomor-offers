@@ -244,6 +244,34 @@ section('sheet arithmetic is cross-footed');
   ok(w2.some((w) => /floor column says/i.test(w)), 'floor/code disagreement reported');
 }
 
+section('an unreleased floor is quiet about its missing prices');
+{
+  /* Ops price a floor when they release it, so every row of an unreleased floor
+     is legitimately unpriced. Warning per row put "GPL-001: no usable price
+     (and 180 more like it)" permanently at the top of the app, where it read as
+     a defect. Suppressed on the user's instruction 2026-08-18.
+
+     The risk in that change is silencing the warning everywhere, which would
+     hide a released unit that really has lost its price — so both halves are
+     asserted here, not just the one that was asked for. */
+  const h = 'Unit Code,Availability,Final Price,Total Unit Price';
+  const { warnings } = G.normalizeRows(G.parseCSV(
+    `${h}\nGPL-001,,-,-\nQSE-999,Available,-,-`));
+
+  ok(!warnings.some((w) => /GPL-001/.test(w)),
+     'an unreleased floor does not warn about having no price');
+  ok(warnings.some((w) => /QSE-999.*no usable price/.test(w)),
+     'a RELEASED floor still warns when a unit has no price');
+
+  /* The flag is what does it. Under its old name (`sellable`) it was inert, so
+     a test that only checked the outcome would have passed against code that
+     read nothing at all. */
+  const gpl = G.CONFIG.floors.find((f) => f.code === 'GPL');
+  ok(gpl && gpl.released === false, 'GPL is marked unreleased in CONFIG.floors');
+  ok(G.CONFIG.floors.filter((f) => f.released === false).length === 1,
+     'exactly one floor is unreleased — the rest must keep warning');
+}
+
 section('rate per metre, and the two columns with the same name');
 {
   /* THE PROJECT WORKBOOK HEADS TWO DIFFERENT COLUMNS "Outdoor SQM Price" —

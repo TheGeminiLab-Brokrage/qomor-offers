@@ -214,8 +214,22 @@ function normalizeRows(rows, planAreas, opts = {}) {
        pin is geometry, not money, and the ground plaza's 178 units are all
        unpriced today. Without this the tool cannot show the very units it
        exists to pin. Nothing that builds an offer passes keepUnpriced. */
+    /* An UNRELEASED floor arrives with dashes in every price column. That is
+       its normal state, not a fault: ops price a floor when they release it,
+       and until then every row of it is legitimately unpriced. Warning per row
+       put "GPL-001: no usable price (and 180 more like it)" permanently at the
+       top of the app, where it read as a defect and buried the warnings that
+       are real. Suppressed on the user's instruction 2026-08-18.
+
+       An UNKNOWN floor code still warns — the default here is to speak up, so
+       a floor nobody has declared cannot go quiet by accident. */
+    const floor = CONFIG.floors.find((f) => f.code === parsed.floorCode);
+    const released = !floor || floor.released !== false;
     if (price === null || price <= 0) {
-      if (!opts.keepUnpriced) { warnings.push(`${where}: no usable price — skipped.`); return; }
+      if (!opts.keepUnpriced) {
+        if (released) warnings.push(`${where}: no usable price — skipped.`);
+        return;
+      }
       price = null;
     }
 

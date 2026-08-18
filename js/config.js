@@ -209,40 +209,48 @@ const CONFIG = {
    * code: QSP-067 = building Q, Sky Plaza, unit 067.
    *
    * NOTE "SP" is Sky Plaza, NOT "sales plan". Sky Plaza is the ground level;
-   * Ground Plaza sits below it and is not sold (hypermarket, showroom, kids
-   * area) — it has no rows in the sheet. GP is a placeholder code: no Ground
-   * Plaza unit exists to read a real one from. */
+   * Ground Plaza sits below it. It was recorded here as "not sold ... has no
+   * rows in the sheet" — both were true when written and neither is now: the
+   * workbook carries 181 GPL rows, all pinned, and ops will price them when
+   * they release the floor. */
   /* GPL, not GP: the workbook codes its ground-floor units GPL-001..GPL-178,
      so the code here has to be what the sheet actually writes or every row
      mismatches. It is also the one floor whose codes carry NO building letter
      — the ground plaza is a single continuous plate, numbered straight through,
      not four wings each restarting at 001. See parseUnitCode.
 
-     WARNING: `sellable` IS INERT. Nothing reads it — the name collides with
-     app.js's own sellable(building, floor) function, which is a different thing
-     entirely, so it reads like a switch and is really a comment. Flipping it
-     changes nothing. Left in place only because it documents intent; delete it
-     or make it real, but do not trust it. (The same trap as `sharedWith` in
-     plan.js, which sat as inert data until 2026-08-16.)
+     `released` IS LIVE as of 2026-08-18, and it used to be called `sellable`.
+     Under the old name it was inert — nothing read it, and the name collided
+     with app.js's sellable(building, floor), which is a different thing
+     entirely, so it read like a switch and was really a comment. It now does
+     one job, in sheet.js: a floor marked `released: false` does NOT warn about
+     its rows having no price, because an unreleased floor having no prices is
+     what "unreleased" means. Ops price a floor when they release it.
+
+     So flipping it changes what the agent sees, and nothing else. It does not
+     gate visibility or make a unit sellable — that is entirely the data, below.
 
      What ACTUALLY keeps the ground floor dark is the data: all 181 rows arrive
      with dashes in every price column and an empty Availability cell, and the
      parser fails closed on both. Ops filling those in is enough to make the
-     units parse — but NOT enough to make them visible, because the app is
-     navigated building-first and these units have no building. See unitsIn(). */
+     units parse and appear, with no code change and no flag flip here — the
+     flag only decides whether their absence is worth mentioning until then.
+     (The same inert-data trap as `sharedWith` in plan.js, which sat unread
+     until 2026-08-16. Two found in two days; suspect the next one.) */
+
   /* hasBuildings: false marks a floor that is ONE CONTINUOUS PLATE with no
-     wings. Unlike `sellable` above it is read — by floorHasBuildings() in
+     wings. Like `released` above it is read — by floorHasBuildings() in
      app.js — and it is what makes the ground plaza reachable: the app is
      navigated building-first, so a floor whose units belong to no building
      would otherwise match no selection and stay invisible however well priced.
      On such a floor the building filter is skipped, and the floor is listed
      under EVERY building, on the user's decision 2026-08-17. */
   floors: [
-    { code: 'GPL', name: 'Ground Plaza', sellable: false, hasBuildings: false },
-    { code: 'SP',  name: 'Sky Plaza',    sellable: true  },
-    { code: 'FT',  name: 'First Floor',  sellable: true  },
-    { code: 'SE',  name: 'Second Floor', sellable: true  },
-    { code: 'TH',  name: 'Third Floor',  sellable: true  },
+    { code: 'GPL', name: 'Ground Plaza', released: false, hasBuildings: false },
+    { code: 'SP',  name: 'Sky Plaza',    released: true  },
+    { code: 'FT',  name: 'First Floor',  released: true  },
+    { code: 'SE',  name: 'Second Floor', released: true  },
+    { code: 'TH',  name: 'Third Floor',  released: true  },
   ],
 
   /* Letters corrected by the client 2026-08-12; an earlier guess had them
