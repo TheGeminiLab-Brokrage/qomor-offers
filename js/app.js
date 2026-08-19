@@ -799,6 +799,18 @@ $('btnOffer').onclick = async () => {
   note.className = '';
   try {
     const { how, fellBackToEnglish } = await deliverOffer(unit, plan, PLANS[unit.floorCode]);
+
+    /* Record the offer. AFTER the await, so only an offer that actually reached
+       the agent is counted — a failed export throws above and is never logged,
+       which keeps "offers sent" honest. Not awaited and never able to throw, so
+       a dead endpoint cannot cost a sale. */
+    if (typeof logOffer === 'function') {
+      logOffer(offerRow(CONFIG.telemetry.project, unit, [unit], plan,
+                        buildSchedule(unit, plan).summary,
+                        { delivery: how === 'shared' ? 'shared' : 'downloaded',
+                          lang: lang() }));
+    }
+
     const url = whatsappUrl(unit, plan);
     if (how === 'shared') {
       note.textContent = t('offer.shared');

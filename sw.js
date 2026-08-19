@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v26';
+const CACHE = 'qomor-offers-v27';
 
 /* Code is revalidated; artwork is not.
  *
@@ -39,6 +39,7 @@ const SHELL = [
   'js/plan.js',
   'js/sheet.js',
   'js/engine.js',
+  'js/telemetry.js',
   'js/pdf.js',
   'js/app.js',
   /* jsPDF is NOT precached, and neither are the embedded fonts. At 410 KB,

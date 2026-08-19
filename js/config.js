@@ -25,6 +25,28 @@ const CONFIG = {
   currency: 'EGP',
   logo: 'assets/logo.png',
 
+  /* ------------------------------------------------------------ analytics --
+   * Where an issued offer is recorded. SHIPPED DISABLED: with no `url` and
+   * `key`, js/telemetry.js does nothing at all, so this can go live before the
+   * backend exists and be switched on by editing these two lines.
+   *
+   * `key` is the Supabase ANON key and it is PUBLIC — it sits in the page
+   * source of a static site, and there is no way around that. It is safe only
+   * because the table's row-level security grants anon INSERT and nothing
+   * else: no select, so this key cannot read back a single row. Never put the
+   * service_role key here; that one bypasses RLS entirely and would hand every
+   * project's commercial activity to anyone who opened dev tools.
+   *
+   * `project` is the tenant. It must match a value the table's check
+   * constraint allows, or the row is rejected at the database rather than
+   * landing under the wrong developer's name. */
+  telemetry: {
+    url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
+    project: 'qomor',
+    version: 'qomor-offers-v27',  // keep in step with sw.js, so a bad build is identifiable
+  },
+
   /* ---------------------------------------------------------------- sheet --
    * gviz first: it echoes the caller's Origin (so CORS works from anywhere)
    * and sends Cache-Control: no-cache. Verified 2026-08-12 returning HTTP 200,
