@@ -37,6 +37,28 @@ const CONFIG = {
    * tab today; normalizeRows() validates the header row and fails closed if it
    * ever stops being, which is the only real protection.
    */
+  /*
+   * WORKBOOKS REPLACED 2026-08-18, both of them, at the client's request. The
+   * previous pair (1ZC2rmCo… project, 1uwcijIm… third floor) are dead to this
+   * app. Verified before the swap: same 530 + 182 units, same codes, same 181
+   * unpriced ground-plaza rows, and only six status changes — real movement,
+   * six units gone to Booked.
+   *
+   * THESE SHEETS WRITE NUMBERS IN ARABIC. U+066B (٫) is the decimal point and
+   * U+066C (٬) the thousands separator, where the old workbooks used "." and
+   * ",". parseNumber() folds both; it did not before, and until it did an
+   * indoor rate of "188٬000٫00" read as 18,800,000 and a 34٫5 m² unit as 345 m².
+   * Do not assume a future workbook is Western just because these two rows are:
+   * one row here mixes them, with area "43٫68" and outdoor "12.5".
+   *
+   * KNOWN BAD ROW, reported to the client 2026-08-18 and NOT worked around
+   * here: QSP-004 carries a Total Unit Price of 2,913,501,173 where area ×
+   * rate gives 8,995,178 — about 324x. The row validator catches it and the
+   * unit is Not Available, so it cannot be quoted today, but it WOULD quote at
+   * 2.9bn the moment ops mark it Available. The sheet is the authority (see
+   * the 2026-08-12 ruling below), so this is theirs to correct, not ours to
+   * patch — but it must not be forgotten.
+   */
   /* TWO WORKBOOKS, AND WHICH TEAM THIS APP IS FOR.
    *
    * The client replaced the single workbook on 2026-08-16. There are three
@@ -67,19 +89,19 @@ const CONFIG = {
     {
       key: 'project',
       label: 'the project inventory',
-      id: '1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ',
+      id: '1Juk1RyZHMqzZGngB9ZVxRdF9fijRWsr6',
       urls: [
-        'https://docs.google.com/spreadsheets/d/1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ/gviz/tq?tqx=out:csv',
-        'https://docs.google.com/spreadsheets/d/1ZC2rmCo_mBOi1bREmFhJ1p4wY9fxvieqsyATCkmm5cQ/export?format=csv',
+        'https://docs.google.com/spreadsheets/d/1Juk1RyZHMqzZGngB9ZVxRdF9fijRWsr6/gviz/tq?tqx=out:csv',
+        'https://docs.google.com/spreadsheets/d/1Juk1RyZHMqzZGngB9ZVxRdF9fijRWsr6/export?format=csv',
       ],
     },
     {
       key: 'thirdFloor',
       label: 'the third-floor inventory',
-      id: '1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI',
+      id: '1AZdX1wgeGzSnzPuoP8wMQT3NAKX0KPdZ',
       urls: [
-        'https://docs.google.com/spreadsheets/d/1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI/gviz/tq?tqx=out:csv',
-        'https://docs.google.com/spreadsheets/d/1uwcijImIaofSNdXlGzdDAvsm8Ujo7MAUZRx-rw2BqeI/export?format=csv',
+        'https://docs.google.com/spreadsheets/d/1AZdX1wgeGzSnzPuoP8wMQT3NAKX0KPdZ/gviz/tq?tqx=out:csv',
+        'https://docs.google.com/spreadsheets/d/1AZdX1wgeGzSnzPuoP8wMQT3NAKX0KPdZ/export?format=csv',
       ],
     },
   ],

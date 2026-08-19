@@ -39,7 +39,29 @@ const norm = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+
 /** "3,375,000.00" -> 3375000. Returns null when there is no number present. */
 function parseNumber(raw) {
   if (raw == null) return null;
-  const cleaned = String(raw).replace(/[^\d.-]/g, '');
+
+  /* ARABIC-LOCALE NUMERALS. The client re-exported both workbooks on
+     2026-08-18 with Arabic separators: U+066B (٫) as the decimal point and
+     U+066C (٬) for thousands, where the old sheets used "." and ",".
+
+     The strip below keeps only [\d.-], so both characters were being deleted
+     rather than read. "188٬000٫00" parsed as 18800000 — a HUNDRED times the
+     real 188,000.00 — and an area of "34٫5" became 345 m². Nothing errored.
+     Values with no decimal part ("8٬600٬436") happened to survive intact, so
+     the fault hit rates and areas while leaving most totals looking correct,
+     which is the worst shape it could have taken.
+
+     Arabic-Indic DIGITS are folded too. They are absent from today's sheets —
+     only the two separators appear — but a sheet that writes ٫ is one locale
+     setting away from writing ٠١٢, and that would fail the same silent way.
+     Note this is the opposite direction to the PDF, which must never EMIT
+     Arabic-Indic digits because the embedded font drops them. */
+  const cleaned = String(raw)
+    .replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 0x0660)
+    .replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 0x06F0)
+    .replace(/٬/g, '')
+    .replace(/٫/g, '.')
+    .replace(/[^\d.-]/g, '');
   if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;

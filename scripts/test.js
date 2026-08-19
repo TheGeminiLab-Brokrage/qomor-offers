@@ -211,6 +211,29 @@ section('embedded commas and quotes survive the parser');
   eq(G.parseNumber('"1,840,000.00"'), 1840000, 'parseNumber strips formatting');
   eq(G.parseNumber(''), null, 'empty is null, not 0');
   eq(G.parseNumber('—'), null, 'dash is null, not 0');
+
+  /* ARABIC-LOCALE NUMERALS — both workbooks have written numbers this way
+     since the client replaced them on 2026-08-18. U+066B (٫) is the decimal
+     point, U+066C (٬) the thousands separator.
+
+     These are exact-value assertions on purpose. The old code stripped both
+     characters instead of reading them, which did not throw and did not warn:
+     it returned a number 100x too large for a rate and 10x for an area, and
+     the only visible symptom was a per-metre total that no longer reconciled.
+     A test that merely checked "is a number" would have passed throughout. */
+  eq(G.parseNumber('  188٬000٫00 '), 188000, 'Arabic thousands + decimal separator');
+  eq(G.parseNumber('34٫5'), 34.5, 'Arabic decimal separator alone');
+  eq(G.parseNumber('  8٬600٬436 '), 8600436, 'Arabic thousands separators alone');
+  eq(G.parseNumber('  -   '), null, 'an Arabic-formatted blank is still null');
+  /* One row of the live project sheet mixes the two conventions — area "43٫68"
+     beside outdoor "12.5" — so both must work in the same pass, not by
+     detecting a locale for the file. */
+  eq(G.parseNumber('12.5'), 12.5, 'Western decimals still parse alongside');
+  eq(G.parseNumber('1,840,000.00'), 1840000, 'Western thousands still parse');
+  /* Arabic-Indic digits do not appear in today's sheets. Folded anyway: a
+     workbook that writes ٫ is one locale setting from writing ٠١٢. */
+  eq(G.parseNumber('٢٥٠٠'), 2500, 'Arabic-Indic digits fold to Western');
+  eq(G.parseNumber('۲۵۰۰'), 2500, 'extended Arabic-Indic digits fold too');
 }
 
 section('a wrong tab is refused rather than priced off');
