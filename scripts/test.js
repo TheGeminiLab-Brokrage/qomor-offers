@@ -58,10 +58,12 @@ section('unit codes');
    how config happens to express them — the point of a test is to disagree with
    the implementation when the implementation is wrong.
    6y carries a single 10% at delivery on the client's instruction 2026-08-18;
-   the others are the standard 5% / 5% / 10% at quarters 4, 8 and 12. */
+   the others are the standard 5% / 5% / 10% at quarters 4, 8 and 14.
+   Delivery moved from month 36 to month 42 (3.5 years) on the client's
+   instruction 2026-08-20; quarters 4 and 8 are unaffected. */
 const EXPECTED_MILESTONE_MONTHS = {
-  '4y': [], '6y': [36], '7y': [12, 24, 36],
-  '8y': [12, 24, 36], '9y': [12, 24, 36], '10y': [12, 24, 36],
+  '4y': [], '6y': [42], '7y': [12, 24, 42],
+  '8y': [12, 24, 42], '9y': [12, 24, 42], '10y': [12, 24, 42],
 };
 
 section('plan definitions foot to 100%');
@@ -114,7 +116,7 @@ section('every plan × representative units sums exactly');
       eq(rows.filter((r) => r.instalment).length, plan.instalments, `${label}: instalment count`);
       eq(rows.filter((r) => r.down).length, 1, `${label}: exactly one down payment`);
       eq(rows.filter((r) => r.maintenance).length, 1, `${label}: exactly one maintenance row`);
-      eq(summary.maintenance, Math.round(u.price * 0.09), `${label}: maintenance is 9%`);
+      eq(summary.maintenance, Math.round(u.price * 0.10), `${label}: maintenance is 10%`);
 
       // Dates must march forward, and the term must match the plan.
       const months = rows.map((r) => r.month);
@@ -417,7 +419,7 @@ function worked() {
   console.log(`   Price           ${G.fmt(summary.price)} EGP`);
   console.log(`   Down ${(plan.down * 100).toFixed(0)}%         ${G.fmt(summary.downPayment)} EGP`);
   console.log(`   ${summary.instalmentCount} quarterly × ${G.fmt(summary.instalmentAmount)} EGP`);
-  console.log(`   Maintenance 9%  ${G.fmt(summary.maintenance)} EGP  (month ${G.CONFIG.maintenanceDueMonth})`);
+  console.log(`   Maintenance ${G.pctLabel(G.CONFIG.maintenanceRate)}  ${G.fmt(summary.maintenance)} EGP  (month ${G.CONFIG.maintenanceDueMonth})`);
   console.log(`   Total payable   ${G.fmt(summary.totalPayable)} EGP`);
   console.log('   first six rows:');
   rows.slice(0, 6).forEach((r) =>

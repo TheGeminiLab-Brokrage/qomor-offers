@@ -65,14 +65,14 @@ const PDF_STRINGS = {
   'page.terms': 'الشروط',
   'terms.title': 'ما يفترضه هذا العرض',
   'terms.finalPrice': 'تُحتسب خطة الأقساط على السعر النهائي بعد خصم الوحدة، وليس على إجمالي سعر الوحدة.',
-  /* WESTERN DIGITS, "9%" and "36" — not ٩٪ and ٣٦.
+  /* WESTERN DIGITS, "10%" and "42" — not ١٠٪ and ٤٢.
      Two reasons, and either alone is decisive. The embedded Arabic font has no
      Arabic-Indic digits, so they are dropped by the sanitiser: the first draft
      of this line printed "تُحتسب الصيانة بنسبة  على السعر النهائي" with the
      figure simply missing, which is worse than wrong because it still reads as
      a sentence. And the client's standing rule is that numbers stay Western so
      they match the contract the customer signs. */
-  'terms.maintenance': 'تُحتسب الصيانة بنسبة 9% على السعر النهائي نفسه، وتُسدَّد دفعة واحدة في الشهر 36.',
+  'terms.maintenance': 'تُحتسب الصيانة بنسبة 10% على السعر النهائي نفسه، وتُسدَّد دفعة واحدة في الشهر 42.',
   'terms.firstInstalment': 'يُستحق القسط الربع سنوي الأول بعد ثلاثة أشهر من التعاقد.',
   'terms.noFees': 'لا تُضاف رسوم نادي أو انتظار أو جراج أو مخزن أو رسوم إدارية. يُدرج سعر الجراج وسعر المخزن في جداول الخطة كبنود منفصلة غير متاحة حالياً.',
   'terms.avail': 'الأسعار والإتاحة',

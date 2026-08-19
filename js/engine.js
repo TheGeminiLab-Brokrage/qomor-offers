@@ -6,7 +6,7 @@
  *   plan   down    instalments  term    milestones
  *   4y     6.25%   15           45 mo   none
  *   6y     10%     24           72 mo   none
- *   7y     20%     28           84 mo   +5% Q4, +5% Q8, +10% Q12
+ *   7y     20%     28           84 mo   +5% Q4, +5% Q8, +10% Q14
  *   8y     30%     32           96 mo   same
  *   9y     40%     36          108 mo   same
  *   10y    50%     40          120 mo   same

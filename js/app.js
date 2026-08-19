@@ -736,8 +736,8 @@ function renderSchedule() {
     });
   }
   /* The reference layout ends on a flat 100%, because there the instalments are
-     the whole price. Ours are not: the 9% maintenance is charged ON TOP of the
-     price, so the schedule foots to 109% of it. Printing 100% here would be a
+     the whole price. Ours are not: the 10% maintenance is charged ON TOP of the
+     price, so the schedule foots to 110% of it. Printing 100% here would be a
      wrong number on the document a customer is asked to agree to, so it is
      computed from the rows rather than assumed. */
   const payable = scheduleTotal(rows);

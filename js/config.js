@@ -219,7 +219,7 @@ const CONFIG = {
   milestones: [
     { quarter: 4, pct: 0.05 },
     { quarter: 8, pct: 0.05 },
-    { quarter: 12, pct: 0.10 },
+    { quarter: 14, pct: 0.10 },
   ],
   plans: [
     { id: '4y',  label: '4 years',  down: 0.0625, instalments: 15, milestones: false },
@@ -227,15 +227,15 @@ const CONFIG = {
        instructed and CONFIRMED 2026-08-18 — they were asked specifically
        whether the 10% comes out of the 100% or on top of it, and it comes
        out: the quarterly instalment absorbs it. Do not reopen this.
-       Delivery is month 36 and instalments are quarterly, so that is quarter 12
-       — the same quarter the 9% maintenance falls due, which is deliberate:
-       both land at handover.
+       Delivery is month 42 (updated 2026-08-20, was month 36) and instalments
+       are quarterly, so that is quarter 14 — the same quarter the 10%
+       maintenance falls due, which is deliberate: both land at handover.
        Given as this plan's own array rather than `true`, because `true` means
-       the standard 5% / 5% / 10% at quarters 4, 8 and 12, and this plan takes
-       only the last of those. The level instalment drops from 3.75% to 3.333%
-       to absorb it, so the plan still foots to exactly 100%. */
+       the standard 5% / 5% / 10% at quarters 4, 8 and 14, and this plan takes
+       only the last of those. The level instalment absorbs it, so the plan
+       still foots to exactly 100%. */
     { id: '6y',  label: '6 years',  down: 0.10,   instalments: 24,
-      milestones: [{ quarter: 12, pct: 0.10 }] },
+      milestones: [{ quarter: 14, pct: 0.10 }] },
     { id: '7y',  label: '7 years',  down: 0.20,   instalments: 28, milestones: true  },
     { id: '8y',  label: '8 years',  down: 0.30,   instalments: 32, milestones: true  },
     { id: '9y',  label: '9 years',  down: 0.40,   instalments: 36, milestones: true  },
@@ -243,10 +243,14 @@ const CONFIG = {
   ],
 
   /* ----------------------------------------------------------- maintenance --
-   * 9% on every plan, due at month 36, which is also the delivery date. */
-  maintenanceRate: 0.09,
-  maintenanceDueMonth: 36,
-  deliveryMonth: 36,
+   * 10% on every plan, due at month 42 (3.5 years), which is also the
+   * delivery date. Changed 2026-08-20 on the client's instruction — was 9%
+   * at month 36. Confirm this against the client's payment-plan tabs once
+   * they update the shared sheet; it did not reflect this change as of
+   * 2026-08-19. */
+  maintenanceRate: 0.10,
+  maintenanceDueMonth: 42,
+  deliveryMonth: 42,
 
   /* --------------------------------------------------------------- floors --
    * The client sheet's own vocabulary. `code` is the middle segment of a unit
@@ -423,7 +427,7 @@ const CONFIG = {
  * printed by the test suite so they cannot quietly become fact. */
 const ASSUMPTION_TEXT = {
   finalPrice: 'The instalment plan is calculated on the sheet\'s Final Price (after the per-unit discount), not on the Total Unit Price.',
-  maintenance: 'The 9% maintenance is calculated on the same Final Price, and is a single payment at month 36.',
+  maintenance: 'The 10% maintenance is calculated on the same Final Price, and is a single payment at month 42.',
   firstInstalment: 'The first quarterly instalment falls 3 months after contract.',
   rounding: 'Rounding drift is absorbed by the final instalment so the schedule sums exactly.',
   /* Keep the Arabic inside its own brackets. The PDF strips anything jsPDF's
