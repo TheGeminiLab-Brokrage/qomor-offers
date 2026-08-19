@@ -77,6 +77,8 @@ const LATIN = [
 const ARABIC = [
   ['Amiri-Regular.ttf', 'Amiri', 'normal'],
   ['Amiri-Bold.ttf',    'Amiri', 'bold'],
+  ['AmiriSup-Regular.ttf', 'AmiriSup', 'normal'],
+  ['AmiriSup-Bold.ttf',    'AmiriSup', 'bold'],
 ];
 
 function bundle(fonts, globalName, dest, blurb) {

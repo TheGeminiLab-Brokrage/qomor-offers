@@ -66,6 +66,7 @@ const PLAN_FADED = 0.3;
  */
 let DISPLAY = 'helvetica';                // Marcellus — titles
 let SANS    = 'helvetica';                // Montserrat — everything else
+let AMIRI_SUP = null;                     // true Amiri, loaded only to supply ² — see tStartSup2
 
 /**
  * Whether THIS document is being written in Arabic.
@@ -270,6 +271,7 @@ function registerFonts(doc) {
   if (RTL && fonts.Amiri) {
     DISPLAY = 'Amiri';
     SANS    = 'Amiri';
+    AMIRI_SUP = fonts.AmiriSup ? 'AmiriSup' : null;
     return true;
   }
   const ok = fonts.Montserrat;
@@ -415,6 +417,68 @@ function tStart(doc, s, x, y, x0, x1) {
 /** Draw a run that ends at `x` within [x0, x1] — prices, times, figures. */
 function tEnd(doc, s, x, y, x0, x1) {
   doc.text(TX(s), ax(x, x0, x1), y, endAlign());
+}
+
+/** Like tEnd(), but with the same ² -> AmiriSup fallback as tStartSup2(). See
+ * that function's comment. tEnd's RTL branch positions like tStart's non-RTL
+ * branch (start-anchored) and vice versa, so the two cases below are swapped
+ * relative to tStartSup2(). */
+function tEndSup2(doc, s, x, y, x0, x1, font, style) {
+  const str = String(s);
+  if (!AMIRI_SUP || !str.endsWith('²')) { tEnd(doc, str, x, y, x0, x1); return; }
+  const base = str.slice(0, -1);
+  const anchor = ax(x, x0, x1);
+  if (RTL) {
+    doc.setFont(font, style);
+    doc.text(TX(base), anchor, y);
+    const baseW = doc.getTextWidth(TX(base));
+    doc.setFont(AMIRI_SUP, style);
+    doc.text(TX('²'), anchor + baseW, y);
+    doc.setFont(font, style);
+  } else {
+    doc.setFont(AMIRI_SUP, style);
+    doc.text(TX('²'), anchor, y, { align: 'right' });
+    const supW = doc.getTextWidth(TX('²'));
+    doc.setFont(font, style);
+    doc.text(TX(base), anchor - supW, y, { align: 'right' });
+  }
+}
+
+/**
+ * Like tStart(), but if `s` ends in U+00B2 (²), that one character is drawn in
+ * AMIRI_SUP instead of the current font.
+ *
+ * Why this exists: the Arabic offer's main face (registered under the family
+ * name 'Amiri', see registerFonts()) is Noto Naskh Arabic as of 2026-08-20 —
+ * full Arabic coverage, full ASCII, but it does not carry U+00B2. The true
+ * Amiri font does, so it is loaded ALONGSIDE under the family 'AmiriSup'
+ * purely to supply this one glyph. No manual baseline shift is needed: ² is
+ * already a small raised glyph by design in both faces, at the same font size.
+ *
+ * Scoped deliberately to values that come straight out of a stat()-style
+ * label/value pair (area, outdoor) — those are the prominent, page-level area
+ * figures. It does NOT reach into the payment page's inline caption line
+ * (pay.line/pay.outdoor), which builds "... m² ..." mid-sentence rather than
+ * as a whole value; that line still prints "m2" without the superscript. */
+function tStartSup2(doc, s, x, y, x0, x1, font, style) {
+  const str = String(s);
+  if (!AMIRI_SUP || !str.endsWith('²')) { tStart(doc, str, x, y, x0, x1); return; }
+  const base = str.slice(0, -1);
+  const anchor = ax(x, x0, x1);
+  if (RTL) {
+    doc.setFont(AMIRI_SUP, style);
+    doc.text(TX('²'), anchor, y, { align: 'right' });
+    const supW = doc.getTextWidth(TX('²'));
+    doc.setFont(font, style);
+    doc.text(TX(base), anchor - supW, y, { align: 'right' });
+  } else {
+    doc.setFont(font, style);
+    doc.text(TX(base), anchor, y);
+    const baseW = doc.getTextWidth(TX(base));
+    doc.setFont(AMIRI_SUP, style);
+    doc.text(TX('²'), anchor + baseW, y);
+    doc.setFont(font, style);
+  }
 }
 
 function imageElement(src) {
@@ -752,11 +816,11 @@ function sectionTitle(doc, text, y) {
 function stat(doc, label, value, x, y, valueSize = 13, colour = INK, box) {
   const [x0, x1] = box || [M, PW - M];
   caps(doc, label, x, y, {
-    size: 6.6, colour: colour === INK ? MUTED : ON_NAVY_2, track: 0.5, x0, x1,
+    size: 9.5, colour: colour === INK ? MUTED : ON_NAVY_2, track: 0.5, x0, x1,
   });
   doc.setFont(SANS, 'bold').setFontSize(valueSize);
   setText(doc, colour);
-  tStart(doc, value, x, y + 6.6, x0, x1);
+  tStartSup2(doc, value, x, y + 8, x0, x1, SANS, 'bold');
 }
 
 /** A label / value line in a list, value flush to `right`. */
@@ -770,7 +834,7 @@ function listRow(doc, label, value, x, right, y, opts = {}) {
   tStart(doc, label, x, y, x, right);
   doc.setFont(SANS, 'bold');
   setText(doc, valueColour);
-  tEnd(doc, value, right, y, x, right);
+  tEndSup2(doc, value, right, y, x, right, SANS, 'bold');
 }
 
 /** A gold bullet, used for every feature and term in the document. */
@@ -1005,6 +1069,10 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      (٢٠٢٦), which the embedded font does not carry and drops in silence, so
      it would need ar-EG-u-nu-latn rather than a bare locale swap. */
   const today = contractDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  /* Short form for the unit-offer divider's "Prepared" stat — that column is
+     only 33mm wide (the tightest of the four), and the full month name at the
+     larger stat size this page uses runs off the page edge. */
+  const todayShort = contractDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const isClinic = /medical/i.test(unit.type || '');
   const art = CONFIG.art || {};
 
@@ -1320,10 +1388,10 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
     const k = column(x, w);
     stat(doc, label, value, k.x, 142, size, colour, [k.x, k.x + k.w]);
   };
-  statAt(S('offer.area', null, 'Area'), area(unit.area), M, 60, 15, PAPER);
-  statAt(S('offer.yourPrice', null, 'Your price'), money(unit.price), M + 62, 104, 15, GOLD);
-  statAt(S('offer.plan', null, 'Payment plan'), D('plan', summary.planLabel), M + 168, 62, 15, PAPER);
-  statAt(S('offer.prepared', null, 'Prepared'), today, M + 232, PW - M - M - 232, 15, PAPER);
+  statAt(S('offer.area', null, 'Area'), area(unit.area), M, 60, 21, PAPER);
+  statAt(S('offer.yourPrice', null, 'Your price'), money(unit.price), M + 62, 104, 21, GOLD);
+  statAt(S('offer.plan', null, 'Payment plan'), D('plan', summary.planLabel), M + 168, 62, 21, PAPER);
+  statAt(S('offer.prepared', null, 'Prepared'), todayShort, M + 232, PW - M - M - 232, 21, PAPER);
 
   /* ---------- 8. your building ---------- */
   /* Skipped entirely for a unit with no building. This page exists to point at
@@ -1540,7 +1608,7 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   /* Five stats in a row, mirrored as a block the same way the title page's are. */
   const unitStat = (label, value, x) => {
     const k = column(x, 50);
-    stat(doc, label, value, k.x, y + 8, 13, INK, [k.x, k.x + k.w]);
+    stat(doc, label, value, k.x, y + 8, 17, INK, [k.x, k.x + k.w]);
   };
   /* On a floor with no wings the building stat would repeat the floor stat
      beside it — "Ground Plaza / Ground Plaza". Show the project instead, so the
@@ -1563,38 +1631,38 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      The PANEL keeps its position — layout stays — but the gold spine down its
      edge marks where the text begins, so that moves with the text. */
   const priceK = column(M + 150, PW - M - (M + 150));
-  const panelX = priceK.x, panelW = priceK.w, panelH = 46;
+  const panelX = priceK.x, panelW = priceK.w, panelH = 58;
   setFill(doc, NAVY);
   doc.roundedRect(panelX, py2 - 14, panelW, panelH, 2, 2, 'F');
   setFill(doc, GOLD);
   doc.rect(RTL ? panelX + panelW - 1.4 : panelX, py2 - 14, 1.4, panelH, 'F');
   caps(doc, unit.discount ? S('unit.yourPrice', null, 'Your price') : S('unit.price', null, 'Price'),
-       panelX + 10, py2, { size: 7, colour: GOLD, track: 0.9, x0: panelX, x1: panelX + panelW - 10 });
-  doc.setFont(SANS, 'bold').setFontSize(23);
+       panelX + 10, py2 + 1, { size: 10.5, colour: GOLD, track: 0.9, x0: panelX, x1: panelX + panelW - 10 });
+  doc.setFont(SANS, 'bold').setFontSize(30);
   setText(doc, PAPER);
-  tStart(doc, money(unit.price), panelX + 10, py2 + 15, panelX, panelX + panelW - 10);
+  tStart(doc, money(unit.price), panelX + 10, py2 + 19, panelX, panelX + panelW - 10);
 
   if (unit.discount) {
     const listK = column(M, 70), discK = column(M + 72, 70);
     stat(doc, S('unit.listPrice', null, 'List price'), money(unit.total),
-         listK.x, py2, 14, INK, [listK.x, listK.x + listK.w]);
+         listK.x, py2, 19, INK, [listK.x, listK.x + listK.w]);
     stat(doc, S('unit.discount', { pct: pctLabel(unit.discount) }, `Discount ${pctLabel(unit.discount)}`),
-         `- ${money(unit.total - unit.price)}`, discK.x, py2, 14, INK, [discK.x, discK.x + discK.w]);
+         `- ${money(unit.total - unit.price)}`, discK.x, py2, 19, INK, [discK.x, discK.x + discK.w]);
 
-    py2 += 52;
+    py2 += 62;
     setFill(doc, [250, 246, 238]);
-    doc.roundedRect(M, py2 - 8, PW - 2 * M, 24, 2, 2, 'F');
+    doc.roundedRect(M, py2 - 9, PW - 2 * M, 29, 2, 2, 'F');
     setFill(doc, GOLD);
-    doc.rect(RTL ? PW - M - 1.4 : M, py2 - 8, 1.4, 24, 'F');
-    doc.setFont(SANS, 'bold').setFontSize(13);
+    doc.rect(RTL ? PW - M - 1.4 : M, py2 - 9, 1.4, 29, 'F');
+    doc.setFont(SANS, 'bold').setFontSize(17);
     setText(doc, [140, 100, 30]);
     tStart(doc, S('unit.save', { amount: money(unit.total - unit.price) },
-                  `You save ${money(unit.total - unit.price)}`), M + 8, py2 + 2, M + 8, PW - M - 8);
-    doc.setFont(SANS, 'normal').setFontSize(7.8);
+                  `You save ${money(unit.total - unit.price)}`), M + 8, py2 + 3, M + 8, PW - M - 8);
+    doc.setFont(SANS, 'normal').setFontSize(11.5);
     setText(doc, MUTED);
     tStart(doc, S('unit.saveNote', { pct: pctLabel(unit.discount) },
                   `${pctLabel(unit.discount)} off the list price. The payment plan overleaf is calculated on your price.`),
-           M + 8, py2 + 9, M + 8, PW - M - 8);
+           M + 8, py2 + 12, M + 8, PW - M - 8);
   }
 
   /* ---------- 11. payment plan ---------- */

@@ -239,43 +239,50 @@ for (const s of ['Unit QSE-050', '1,404,000 EGP', '15 Aug 2026', 'Sky Plaza', ''
   const jsPDF = (g.jspdf && g.jspdf.jsPDF) || mod.jsPDF || mod;
   const FONTS = require(path.join(root, 'vendor/fonts-ar.js'));
 
-  /* Read the cmap of the shipped subset, so "which glyph did forPdf() ask for"
-     comes from the font rather than from an assumption. */
-  const buf = fs.readFileSync(path.join(root, 'assets/fonts/Amiri-Regular.ttf'));
-  const tbl = {};
-  for (let i = 0, n = buf.readUInt16BE(4); i < n; i++) {
-    const o = 12 + i * 16;
-    tbl[buf.toString('ascii', o, o + 4)] = buf.readUInt32BE(o + 8);
-  }
-  let sub = 0, subFmt = -1;
-  for (let i = 0, n = buf.readUInt16BE(tbl.cmap + 2); i < n; i++) {
-    const off = buf.readUInt32BE(tbl.cmap + 4 + i * 8 + 4);
-    const fmt = buf.readUInt16BE(tbl.cmap + off);
-    if (fmt === 12 || (fmt === 4 && subFmt !== 12)) { sub = tbl.cmap + off; subFmt = fmt; }
-  }
-  const gidFor = (cp) => {
-    if (subFmt === 12) {
-      for (let i = 0, n = buf.readUInt32BE(sub + 12); i < n; i++) {
-        const r = sub + 16 + i * 12;
-        const s = buf.readUInt32BE(r), e = buf.readUInt32BE(r + 4);
-        if (cp >= s && cp <= e) return buf.readUInt32BE(r + 8) + (cp - s);
+  /* Read the cmap of a shipped subset, so "which glyph did forPdf() ask for"
+     comes from the font rather than from an assumption. Factored to a builder
+     because there are now two Arabic-slot fonts to check: the family
+     'Amiri' (Noto Naskh Arabic since 2026-08-20 — see js/pdf.js) for
+     everything, and 'AmiriSup' (the true Amiri) loaded solely to supply ²,
+     which Noto Naskh Arabic's cmap does not carry. */
+  const makeGidFor = (buf) => {
+    const tbl = {};
+    for (let i = 0, n = buf.readUInt16BE(4); i < n; i++) {
+      const o = 12 + i * 16;
+      tbl[buf.toString('ascii', o, o + 4)] = buf.readUInt32BE(o + 8);
+    }
+    let sub = 0, subFmt = -1;
+    for (let i = 0, n = buf.readUInt16BE(tbl.cmap + 2); i < n; i++) {
+      const off = buf.readUInt32BE(tbl.cmap + 4 + i * 8 + 4);
+      const fmt = buf.readUInt16BE(tbl.cmap + off);
+      if (fmt === 12 || (fmt === 4 && subFmt !== 12)) { sub = tbl.cmap + off; subFmt = fmt; }
+    }
+    return (cp) => {
+      if (subFmt === 12) {
+        for (let i = 0, n = buf.readUInt32BE(sub + 12); i < n; i++) {
+          const r = sub + 16 + i * 12;
+          const s = buf.readUInt32BE(r), e = buf.readUInt32BE(r + 4);
+          if (cp >= s && cp <= e) return buf.readUInt32BE(r + 8) + (cp - s);
+        }
+        return 0;
+      }
+      const segX2 = buf.readUInt16BE(sub + 6);
+      for (let i = 0; i < segX2 / 2; i++) {
+        if (cp > buf.readUInt16BE(sub + 14 + i * 2)) continue;
+        const start = buf.readUInt16BE(sub + 16 + segX2 + i * 2);
+        if (cp < start) return 0;
+        const delta = buf.readInt16BE(sub + 16 + segX2 * 2 + i * 2);
+        const roAt = sub + 16 + segX2 * 3 + i * 2;
+        const ro = buf.readUInt16BE(roAt);
+        if (ro === 0) return (cp + delta) & 0xffff;
+        const gi = buf.readUInt16BE(roAt + ro + (cp - start) * 2);
+        return gi ? (gi + delta) & 0xffff : 0;
       }
       return 0;
-    }
-    const segX2 = buf.readUInt16BE(sub + 6);
-    for (let i = 0; i < segX2 / 2; i++) {
-      if (cp > buf.readUInt16BE(sub + 14 + i * 2)) continue;
-      const start = buf.readUInt16BE(sub + 16 + segX2 + i * 2);
-      if (cp < start) return 0;
-      const delta = buf.readInt16BE(sub + 16 + segX2 * 2 + i * 2);
-      const roAt = sub + 16 + segX2 * 3 + i * 2;
-      const ro = buf.readUInt16BE(roAt);
-      if (ro === 0) return (cp + delta) & 0xffff;
-      const gi = buf.readUInt16BE(roAt + ro + (cp - start) * 2);
-      return gi ? (gi + delta) & 0xffff : 0;
-    }
-    return 0;
+    };
   };
+  const gidFor = makeGidFor(fs.readFileSync(path.join(root, 'assets/fonts/Amiri-Regular.ttf')));
+  const gidForSup = makeGidFor(fs.readFileSync(path.join(root, 'assets/fonts/AmiriSup-Regular.ttf')));
 
   /* The same disarming js/pdf.js applies, repeated rather than imported because
      pdf.js is a browser module this harness cannot require. If the two ever
@@ -320,11 +327,15 @@ for (const s of ['Unit QSE-050', '1,404,000 EGP', '15 Aug 2026', 'Sky Plaza', ''
      'the check DOES fail when jsPDF is left to reprocess the text');
 
   /* These are the glyphs the 2026-08-15 font swap silently lost: an Arabic
-     subset missing them drops every percentage and unit code from the offer. */
-  for (const [ch, what] of [['%', 'a percent sign'], ['²', 'a superscript two'],
+     subset missing them drops every percentage and unit code from the offer.
+     ² is checked against AmiriSup, not Amiri — Noto Naskh Arabic (the
+     2026-08-20 'Amiri' font data) does not carry U+00B2, and js/pdf.js's
+     tStartSup2()/tEndSup2() splice it in from the 'AmiriSup' family instead. */
+  for (const [ch, what] of [['%', 'a percent sign'],
                             ['Q', 'a Latin capital'], ['-', 'a hyphen']]) {
     ok(gidFor(ch.codePointAt(0)) !== 0, `the Arabic subset can draw ${what} "${ch}"`);
   }
+  ok(gidForSup('²'.codePointAt(0)) !== 0, 'the AmiriSup subset can draw a superscript two "²"');
 
   /* Everything above proves the TECHNIQUE works. It cannot prove the PDF still
      uses it, because pdf.js is a browser module this harness cannot require and
