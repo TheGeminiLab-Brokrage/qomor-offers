@@ -1092,24 +1092,32 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   const money = (n) => `${fmt(n)} ${D('currency', CONFIG.currency)}`;
   const bId = unit.building;
   /* A unit on a floor with no wings has no building at all — the ground plaza
-     is one continuous plate. Its PLACE is the floor, so the floor's name stands
-     in wherever a building name would go, and the pages that only make sense
-     for a wing (the masterplan highlight, the "Building" stat) are skipped
-     below. Without this the offer read "Building null". */
-  /* unit.floorName directly, NOT the floorName const below — that is declared
-     further down and reading it here is a temporal dead zone, i.e. a crash. */
-  const bNameEn = !bId
-    ? (unit.floorName || unit.floorCode)
-    : ((CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`);
+     is one continuous plate. `bName` is therefore NULL there, not a stand-in,
+     and every use of it below is guarded on bId: the masterplan highlight
+     page, the "Building" stat and the building segment of `where` are all
+     simply absent rather than filled with something else.
+   *
+   * It used to fall back to the FLOOR name, which read as a building on a page
+   * that had already named the floor — the divider printed "Retail · Ground
+   * Plaza · Ground Plaza" and the unit page printed the project name in the
+   * building's slot, wide enough to overrun the stat beside it. A slot with
+   * nothing true to put in it should be closed, not filled. */
+  const bNameEn = bId
+    ? ((CONFIG.buildings.find((b) => b.id === bId) || {}).name || `Building ${bId}`)
+    : null;
   /* "Building Q" is a label with a letter in it, not a name — the letter is the
      client's own and stays Latin, the word around it is translated. Anything
      that is not of that shape falls through unchanged, same rule as everywhere
      else here. */
-  const bName = RTL && /^Building (.+)$/.test(bNameEn)
+  const bName = bNameEn && RTL && /^Building (.+)$/.test(bNameEn)
     ? S('bld.name', { id: /^Building (.+)$/.exec(bNameEn)[1] }, bNameEn)
     : bNameEn;
   const floorName = D('floor', unit.floorName || unit.floorCode);
-  const where = `${D('type', unit.type) || ''} · ${floorName} · ${bName}`.replace(/^ · /, '');
+  /* Built from the parts that exist rather than by stripping a leading
+     separator off a fixed template — the ground plaza drops the building and a
+     unit with no type drops the type, and either way the dots land between the
+     segments that are actually there. */
+  const where = [D('type', unit.type), floorName, bName].filter(Boolean).join(' · ');
   const area = (n) => `${n} m²`;
   let page = 0;
 
@@ -1613,22 +1621,30 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   newPage(S('page.unit', null, 'Your unit'), unit.code);
   let y = sectionTitle(doc, S('unit.title', { code: unit.code }, `Unit ${unit.code}`), 36);
 
-  /* Five stats in a row, mirrored as a block the same way the title page's are. */
+  /* Up to five stats in a row, mirrored as a block the same way the title
+     page's are. Built as a LIST and then laid out by index, so a stat that does
+     not apply closes its slot and the rest move up, rather than leaving a hole
+     or being filled with a stand-in.
+   *
+   * Two are conditional. A floor with no wings has no building — showing the
+   * PROJECT name there instead used to keep the row at five columns, but
+   * "Qomor Business Plaza" is far wider than the 50mm slot and overran the
+   * FLOOR stat beside it, printing the two on top of each other. And the
+   * project name on the unit page is not a fact about the unit: every page
+   * already carries it in the footer. */
   const unitStat = (label, value, x) => {
     const k = column(x, 50);
     stat(doc, label, value, k.x, y + 8, 17, INK, [k.x, k.x + k.w]);
   };
-  /* On a floor with no wings the building stat would repeat the floor stat
-     beside it — "Ground Plaza / Ground Plaza". Show the project instead, so the
-     row keeps its five columns and says something true. */
-  unitStat(bId ? S('unit.building', null, 'Building') : S('proj.name', null, 'Project'),
-           bId ? bName : D('name', CONFIG.name), M);
-  unitStat(S('unit.floor', null, 'Floor'), floorName, M + 52);
-  unitStat(S('unit.type', null, 'Type'), D('type', unit.type) || '—', M + 104);
+  const unitStats = [];
+  if (bId) unitStats.push([S('unit.building', null, 'Building'), bName]);
+  unitStats.push([S('unit.floor', null, 'Floor'), floorName]);
+  unitStats.push([S('unit.type', null, 'Type'), D('type', unit.type) || '—']);
   /* Gross area only — the client instructed 2026-08-12 that the sheet's net
      figure is never shown or printed. */
-  unitStat(S('unit.area', null, 'Area'), area(unit.area), M + 156);
-  if (unit.outdoor) unitStat(S('unit.outdoor', null, 'Outdoor'), area(unit.outdoor), M + 208);
+  unitStats.push([S('unit.area', null, 'Area'), area(unit.area)]);
+  if (unit.outdoor) unitStats.push([S('unit.outdoor', null, 'Outdoor'), area(unit.outdoor)]);
+  unitStats.forEach(([label, value], i) => unitStat(label, value, M + i * 52));
 
   let py2 = y + 34;
   setDraw(doc, LINE); doc.setLineWidth(0.2);

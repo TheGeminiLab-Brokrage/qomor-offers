@@ -256,7 +256,17 @@ const PDF_DATA_AR = {
 
   /* CONFIG's own vocabulary, shared with the app's DATA_AR. */
   type: { Retail: 'تجاري', Medical: 'طبي', Admin: 'إداري' },
+  /* EVERY floor in CONFIG.floors must appear here. pd() returns an unknown
+     value unchanged and says nothing, so a missing floor does not fail — it
+     prints the English name in the middle of an Arabic page. 'Sky Plaza' and
+     'Ground Plaza' were missing until 2026-08-20 and did exactly that, on
+     Sky Plaza's live inventory as well as the ground floor. The wording
+     matches the `levels` map above, which is the client's own from their
+     areas table; note 'Sky Plaza' is deliberately DIFFERENT there and in
+     `features`, where it is a brand-style name and stays transliterated. */
   floor: {
+    'Ground Plaza': 'بلازا أرضية',
+    'Sky Plaza': 'بلازا علوية',
     'First Floor': 'الدور الأول',
     'Second Floor': 'الدور الثاني',
     'Third Floor': 'الدور الثالث',
