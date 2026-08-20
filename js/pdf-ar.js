@@ -206,7 +206,7 @@ const PDF_DATA_AR = {
      Latin on the client's own slide beside their Arabic, and brand-style names
      are not translated — same rule as i18n.js. */
   features: {
-    'First strip mall in Badr City': 'اول ستريب مول في مدينة بدر',
+    'The first sky strip mall in Egypt': 'أول سكاي ستريب مول في مصر',
     'Restaurant cluster': 'مجمع مطاعم',
     'Sky Plaza': 'سكاي بلازا',
     'Bank cluster': 'مجمع بنوك',

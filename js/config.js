@@ -367,7 +367,11 @@ const CONFIG = {
     ],
 
     features: [            // p21 مميزات المشروع
-      'First strip mall in Badr City',
+      /* Client-instructed correction (relayed by the user, 2026-08-20) — the
+         catalogue's own line was 'First strip mall in Badr City'. Not a
+         playbook-rule-4 violation: the client is the one changing their own
+         copy, not us paraphrasing it. */
+      'The first sky strip mall in Egypt',
       'Restaurant cluster',
       'Sky Plaza',
       'Bank cluster',
