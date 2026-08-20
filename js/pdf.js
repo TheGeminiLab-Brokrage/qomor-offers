@@ -457,9 +457,9 @@ function tEndSup2(doc, s, x, y, x0, x1, font, style) {
  *
  * Scoped deliberately to values that come straight out of a stat()-style
  * label/value pair (area, outdoor) — those are the prominent, page-level area
- * figures. It does NOT reach into the payment page's inline caption line
- * (pay.line/pay.outdoor), which builds "... m² ..." mid-sentence rather than
- * as a whole value; that line still prints "m2" without the superscript. */
+ * figures, not any mid-sentence caption that builds an area into a longer
+ * string; a caption like that would need its own splice point and still
+ * print "m2" without the superscript. */
 function tStartSup2(doc, s, x, y, x0, x1, font, style) {
   const str = String(s);
   if (!AMIRI_SUP || !str.endsWith('²')) { tStart(doc, str, x, y, x0, x1); return; }
@@ -1680,18 +1680,6 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
             `Unit ${unit.code} · ${summary.planLabel}`));
   y = sectionTitle(doc, S('pay.title', { label: planLabelTr }, `${summary.planLabel} plan`), 31);
 
-  /* The unit's own figures repeated here, so the schedule page can be read —
-     or forwarded — without turning back. Kept to one line: the row height
-     below is solved against the space left, and every millimetre spent here
-     comes straight out of the table. */
-  doc.setFont(SANS, 'normal').setFontSize(7.6);
-  setText(doc, MUTED);
-  const outdoorBit = unit.outdoor
-    ? S('pay.outdoor', { n: area(unit.outdoor) }, ` + ${unit.outdoor} m² outdoor`) : '';
-  tStart(doc, S('pay.line', { where, area: area(unit.area), outdoor: outdoorBit, price: money(unit.price) },
-                `${where}  ·  ${unit.area} m²${outdoorBit}  ·  Price ${money(unit.price)}`),
-         M, y - 1);
-
   /* Each figure sits in its own bordered card — added 2026-08-20, replacing a
      row of plain label/value pairs that the client's screenshot showed reading
      as one undifferentiated strip of six numbers. Cream fill and hairline
@@ -1712,23 +1700,33 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
    * though its label is not — width is driven by whichever of label/value is
    * wider, not by the number's own visual weight. */
   const statY = y + 9;
-  const CARD_H = 18, CARD_PAD = 4;
+  const CARD_H = 18, CARD_PAD = 3.5;
   const cardY = statY - 6.5;
   const payStat = (label, value, x, w) => {
     const k = column(x, w);
     setDraw(doc, LINE); doc.setLineWidth(0.25);
     setFill(doc, [250, 248, 243]);
     doc.roundedRect(k.x, cardY, k.w, CARD_H, 1.6, 1.6, 'FD');
-    stat(doc, label, value, k.x + CARD_PAD, statY, 11, INK, [k.x + CARD_PAD, k.x + k.w - CARD_PAD]);
+    /* Value bumped from 11pt to 13pt and off the readableSize() taper (which
+       stops at 12pt) — the client's mark-up asked for these numbers to read
+       as the prominent figure in each card, not level with its own label. */
+    stat(doc, label, value, k.x + CARD_PAD, statY, 13, INK, [k.x + CARD_PAD, k.x + k.w - CARD_PAD]);
   };
-  payStat(S('pay.down', null, 'Down payment'), money(summary.downPayment), M, 46);
-  payStat(S('pay.quarterly', null, 'Quarterly'), money(summary.instalmentAmount), M + 49, 38);
-  payStat(S('pay.instalments', null, 'Instalments'), String(summary.instalmentCount), M + 90, 39);
+  /* Widths re-measured for the 13pt value (see the note above this block) —
+     re-run against the real inventory's own price ceiling, not just the two
+     sample offers this file gets rendered against. The live sheet's highest
+     AVAILABLE unit is ~18.7M EGP (M MSP-016); the highest listed at all,
+     available or not, is ~36M (Q QSP-037) before one clear data-entry outlier
+     at 2.48bn. Tested at a deliberately worse 25M down / 44M total than
+     either, and still clears with margin. */
+  payStat(S('pay.down', null, 'Down payment'), money(summary.downPayment), M, 45);
+  payStat(S('pay.quarterly', null, 'Quarterly'), money(summary.instalmentAmount), M + 48, 42);
+  payStat(S('pay.instalments', null, 'Instalments'), String(summary.instalmentCount), M + 93, 38);
   payStat(S('pay.maintenance', { pct: pctLabel(CONFIG.maintenanceRate) },
-            `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`), money(summary.maintenance), M + 132, 50);
-  payStat(S('pay.total', null, 'Total payable'), money(summary.totalPayable), M + 185, 44);
+            `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`), money(summary.maintenance), M + 134, 49);
+  payStat(S('pay.total', null, 'Total payable'), money(summary.totalPayable), M + 186, 46);
   payStat(S('pay.delivery', null, 'Delivery'), summary.deliveryDate.toLocaleDateString('en-GB',
-          { month: 'short', year: 'numeric' }), M + 232, PW - M - M - 232);
+          { month: 'short', year: 'numeric' }), M + 235, PW - M - M - 235);
 
   /* One full-width table with the same shape as the schedule on screen —
      Due / Payment / Date / Amount / % of price, a band per year, milestone rows

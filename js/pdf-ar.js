@@ -147,8 +147,6 @@ const PDF_STRINGS = {
   /* Payment plan ------------------------------------------------------------ */
   'pay.title': 'خطة {label}',
   'pay.sub': 'وحدة {code} · {label}',
-  'pay.line': '{where}  ·  {area}{outdoor}  ·  السعر {price}',
-  'pay.outdoor': ' + {n} خارجي',
   'pay.down': 'المقدم',
   'pay.quarterly': 'القسط الربع سنوي',
   'pay.instalments': 'عدد الأقساط',
