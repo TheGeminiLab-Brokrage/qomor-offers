@@ -1193,11 +1193,11 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
      that the layout stays and the text flips — so every run on it mirrors
      inside [rx, PW - M] and not inside the page. */
   const rx = M + 168, rw = PW - M - rx;
-  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(19);
+  doc.setFont(DISPLAY, RTL ? 'bold' : 'normal').setFontSize(21);
   setText(doc, INK);
   tStart(doc, PLACE, rx, mapY + 8, rx, PW - M);
   setFill(doc, GOLD);
-  doc.rect(ax(rx, rx, PW - M) - (RTL ? 22 : 0), mapY + 12, 22, 1, 'F');
+  doc.rect(ax(rx, rx, PW - M) - (RTL ? 22 : 0), mapY + 13, 22, 1, 'F');
 
   /* The place names come from the client's own catalogue in Arabic; the times
      are rebuilt, because "2 min" is "دقيقتان" and not "2 دقيقة" — Arabic counts
@@ -1205,38 +1205,46 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   const trip = (r) => [D('places', r[0]),
                        RTL && typeof minutes === 'function' ? minutes(r[1]) : r[1]];
 
-  let ly = mapY + 26;
+  /* Row and heading sizes bumped 2026-08-20 to match the readability pass
+     elsewhere in the document — this page kept the original small sizes
+     because its rows are list-shaped (listRow), not stat()-shaped, so the
+     global enlargeType() taper alone still read cramped next to everything
+     else. ROW_GAP absorbs the taller type; the map/button geometry below is
+     sized to the six-row worst case (both lists always show up to 6 rows). */
+  const ROW_GAP = 6.8;
+  let ly = mapY + 27;
   caps(doc, S('loc.within', null, 'Within Badr City'), rx, ly,
-       { colour: INK, size: 7, x0: rx, x1: PW - M });
-  ly += 7;
+       { colour: INK, size: 8.5, x0: rx, x1: PW - M });
+  ly += 8;
   (P.nearby || []).slice(0, 6).forEach((r, i) => {
     const [place, time] = trip(r);
-    listRow(doc, place, time, rx, PW - M, ly + i * 6.2);
+    listRow(doc, place, time, rx, PW - M, ly + i * ROW_GAP, { size: 9 });
   });
 
-  ly += 6 * 6.2 + 8;
+  ly += 6 * ROW_GAP + 9;
   caps(doc, S('loc.wider', null, 'The wider east Cairo'), rx, ly,
-       { colour: INK, size: 7, x0: rx, x1: PW - M });
-  ly += 7;
+       { colour: INK, size: 8.5, x0: rx, x1: PW - M });
+  ly += 8;
   (P.reach || []).slice(0, 6).forEach((r, i) => {
     const [place, time] = trip(r);
-    listRow(doc, place, time, rx, PW - M, ly + i * 6.2);
+    listRow(doc, place, time, rx, PW - M, ly + i * ROW_GAP, { size: 9 });
   });
 
-  /* The Google Maps link, as a button. See mapPin() for why. */
+  /* The Google Maps link, as a button. See mapPin() for why. Moved down from
+     mapH-20 to mapH-14 to make room for the taller lists above it. */
   if (CONFIG.mapsUrl) {
-    const btnY = mapY + mapH - 20, btnH = 14;
+    const btnY = mapY + mapH - 14, btnH = 14;
     setFill(doc, GOLD);
     doc.roundedRect(rx, btnY, rw, btnH, 1.8, 1.8, 'F');
     /* The pin leads the label, so it swaps ends with it. */
-    mapPin(doc, ax(rx + 10, rx, PW - M), btnY + 5.8, NAVY);
-    caps(doc, S('loc.maps', null, 'Open in Google Maps'), rx + 17, btnY + 8.4,
-         { size: 8.6, colour: NAVY, track: 0.4, x0: rx, x1: PW - M });
+    mapPin(doc, ax(rx + 10, rx, PW - M), btnY + 6.2, NAVY);
+    caps(doc, S('loc.maps', null, 'Open in Google Maps'), rx + 17, btnY + 8.9,
+         { size: 10, colour: NAVY, track: 0.4, x0: rx, x1: PW - M });
     /* The whole button is the hit target, not just the glyph run — these offers
        are read on a phone, where a 7pt link is unusable. */
     doc.link(rx, btnY, rw, btnH, { url: CONFIG.mapsUrl });
 
-    doc.setFont(SANS, 'normal').setFontSize(6.4);
+    doc.setFont(SANS, 'normal').setFontSize(7.2);
     setText(doc, MUTED);
     /* A URL is never mirrored or reordered — it is a machine string that has to
        be typeable exactly as printed, so it is drawn LTR whatever the page is
@@ -1684,25 +1692,49 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
                 `${where}  ·  ${unit.area} m²${outdoorBit}  ·  Price ${money(unit.price)}`),
          M, y - 1);
 
-  const statY = y + 8;
+  /* Each figure sits in its own bordered card — added 2026-08-20, replacing a
+     row of plain label/value pairs that the client's screenshot showed reading
+     as one undifferentiated strip of six numbers. Cream fill and hairline
+     border reuse the two tokens already carrying that meaning elsewhere in the
+     document (the discount "you save" note, the price panel) rather than
+     borrowing the reference's red — this stays inside Qomor's own palette.
+   *
+   * Column widths are NOT the old even split — they are sized to the English
+   * caps label, measured with scripts/measure-pay-cards.js (get it from
+   * memory or re-derive with jsPDF's getTextWidth through the same
+   * readableSize() taper caps() renders at). The old widths (50/50/34/58/50/13)
+   * were tuned by eye against the Arabic labels alone; caps() never wraps or
+   * clips in the Latin branch (it just doc.text()s past x1), so an English
+   * export silently overflowed one card's border into the next — invisible as
+   * plain text, glaring once a card border made the seam visible. "DELIVERY"
+   * on a 13mm-wide card was the worst case, running off the page edge.
+   * INSTALMENTS is the narrow one now because its VALUE ("40") is short even
+   * though its label is not — width is driven by whichever of label/value is
+   * wider, not by the number's own visual weight. */
+  const statY = y + 9;
+  const CARD_H = 18, CARD_PAD = 4;
+  const cardY = statY - 6.5;
   const payStat = (label, value, x, w) => {
     const k = column(x, w);
-    stat(doc, label, value, k.x, statY, 11, INK, [k.x, k.x + k.w]);
+    setDraw(doc, LINE); doc.setLineWidth(0.25);
+    setFill(doc, [250, 248, 243]);
+    doc.roundedRect(k.x, cardY, k.w, CARD_H, 1.6, 1.6, 'FD');
+    stat(doc, label, value, k.x + CARD_PAD, statY, 11, INK, [k.x + CARD_PAD, k.x + k.w - CARD_PAD]);
   };
-  payStat(S('pay.down', null, 'Down payment'), money(summary.downPayment), M, 50);
-  payStat(S('pay.quarterly', null, 'Quarterly'), money(summary.instalmentAmount), M + 52, 50);
-  payStat(S('pay.instalments', null, 'Instalments'), String(summary.instalmentCount), M + 104, 34);
+  payStat(S('pay.down', null, 'Down payment'), money(summary.downPayment), M, 46);
+  payStat(S('pay.quarterly', null, 'Quarterly'), money(summary.instalmentAmount), M + 49, 38);
+  payStat(S('pay.instalments', null, 'Instalments'), String(summary.instalmentCount), M + 90, 39);
   payStat(S('pay.maintenance', { pct: pctLabel(CONFIG.maintenanceRate) },
-            `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`), money(summary.maintenance), M + 140, 58);
-  payStat(S('pay.total', null, 'Total payable'), money(summary.totalPayable), M + 200, 50);
+            `Maintenance ${pctLabel(CONFIG.maintenanceRate)}`), money(summary.maintenance), M + 132, 50);
+  payStat(S('pay.total', null, 'Total payable'), money(summary.totalPayable), M + 185, 44);
   payStat(S('pay.delivery', null, 'Delivery'), summary.deliveryDate.toLocaleDateString('en-GB',
-          { month: 'short', year: 'numeric' }), M + 252, PW - M - M - 252);
+          { month: 'short', year: 'numeric' }), M + 232, PW - M - M - 232);
 
   /* One full-width table with the same shape as the schedule on screen —
      Due / Payment / Date / Amount / % of price, a band per year, milestone rows
      picked out. */
   const blocks = scheduleByYear(rows, summary.price);
-  const TOP = statY + 14, BOTTOM = PH - 22;
+  const TOP = cardY + CARD_H + 4.5, BOTTOM = PH - 22;
   const HEAD_H = 6.5, BAND_H = 4.8, BAND_EXTRA = 0.4;
   const MAX_ROW = 5.6, MIN_ROW = 4.1;
 
