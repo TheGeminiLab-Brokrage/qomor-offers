@@ -189,6 +189,8 @@ function postLoadImage(src) {
     img.onerror = () => reject(new Error(`could not load ${src}`));
     img.src = src;
   });
+  // A failed decode must not be remembered as the answer forever.
+  p.catch(() => postImgCache.delete(src));
   postImgCache.set(src, p);
   return p;
 }
