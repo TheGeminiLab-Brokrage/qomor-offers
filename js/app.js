@@ -842,6 +842,31 @@ $('btnOffer').onclick = async () => {
   }
 };
 
+/* ---- the WhatsApp post ----
+   The second delivery path, for a broker group rather than one customer.
+   Everything it does lives in js/post.js; this is only the wiring. */
+$('btnPost').onclick = openPostSheet;
+for (const b of document.querySelectorAll('[data-post-close]')) b.onclick = closePostSheet;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('postSheet').hidden) closePostSheet();
+});
+$('postModes').onclick = (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || b.dataset.mode === postState.mode) return;
+  postState.mode = b.dataset.mode;
+  renderPostPreview();
+};
+$('postTerms').onchange = (e) => {
+  postState.terms = e.target.checked;
+  $('postText').value = buildPostText();
+};
+$('postSend').onclick = postShare;
+$('postCopy').onclick = async () => {
+  const ok = await postCopyText();
+  if (ok) postLog(`post-${postState.mode}-copied`);
+  postFlash(t(ok ? 'post.copied' : 'post.copyFailed'), !ok);
+};
+
 /* ------------------------------------------------------------------ boot -- */
 
 /* Warm the PDF library once the page has settled. It is deliberately not on the

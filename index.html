@@ -197,10 +197,48 @@
     <div id="schedule"></div>
     <div class="offerbar">
       <button class="cta" id="btnOffer" type="button" data-i18n="offer.send">Send offer on WhatsApp</button>
+      <!-- The other way an offer leaves the app: a listing post for a broker
+           group, rather than a document for one customer. See js/post.js. -->
+      <button class="ghost" id="btnPost" type="button" data-i18n="post.open">WhatsApp post</button>
       <span id="offerNote"></span>
     </div>
   </section>
 </main>
+
+<!-- The post sheet. Markup lives here rather than being built in JS so it is
+     styleable and picked up by applyLang(), and it costs nothing until opened. -->
+<div class="sheet" id="postSheet" hidden>
+  <div class="sheet-bg" data-post-close></div>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="postHeading">
+    <div class="sheet-head">
+      <h3 id="postHeading" data-i18n="post.title">WhatsApp post</h3>
+      <button class="sheet-x" type="button" data-post-close
+              data-i18n-attr="aria-label:post.close">&times;</button>
+    </div>
+    <p class="sheet-sub" data-i18n="post.sub"></p>
+
+    <div class="post-controls">
+      <div class="seg" id="postModes">
+        <button type="button" data-mode="short" data-i18n="post.short">Short</button>
+        <button type="button" data-mode="long" data-i18n="post.long">Full</button>
+      </div>
+      <label class="post-toggle">
+        <input type="checkbox" id="postTerms">
+        <span data-i18n="post.terms">Include payment terms</span>
+      </label>
+    </div>
+
+    <!-- dir="rtl": the post is Arabic whatever language the app is in. -->
+    <textarea id="postText" rows="12" spellcheck="false" dir="rtl"></textarea>
+    <div class="post-shots" id="postShots"></div>
+
+    <div class="offerbar">
+      <button class="cta" id="postSend" type="button" data-i18n="post.send">Send on WhatsApp</button>
+      <button class="ghost" id="postCopy" type="button" data-i18n="post.copy">Copy text</button>
+      <span id="postNote"></span>
+    </div>
+  </div>
+</div>
 
 <footer>
   <p id="assumptions"></p>
@@ -233,6 +271,7 @@
      never break an offer — see the three rules at the top of the file. -->
 <script src="js/telemetry.js"></script>
 <script src="js/pdf.js"></script>
+<script src="js/post.js"></script>
 <script src="js/app.js"></script>
 <!-- The service worker makes the app open without a connection and makes the
      browser offer "install to home screen". It never caches the inventory —

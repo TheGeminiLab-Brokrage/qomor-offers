@@ -44,7 +44,7 @@ const CONFIG = {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
     project: 'qomor',
-    version: 'qomor-offers-v27',  // keep in step with sw.js, so a bad build is identifiable
+    version: 'qomor-offers-v28',  // keep in step with sw.js, so a bad build is identifiable
   },
 
   /* ---------------------------------------------------------------- sheet --
@@ -343,6 +343,88 @@ const CONFIG = {
    * domain once it is live, so links already sent keep working; switch this to
    * the custom domain only after DNS resolves. */
   shareBaseUrl: 'https://qomor.thegeminilab.com/',
+
+  /* ------------------------------------------------- the WhatsApp post ----
+   * Copy for js/post.js — the listing an agent sends into a broker group,
+   * as opposed to the PDF offer they send to one customer.
+   *
+   * PROVENANCE. Every figure and every bullet in `body` is the client's own
+   * material out of `project` below, which was itself read off the Arabic
+   * catalogue ("cataloue qomor arabic partneres final.pdf", 2026-08-13) with
+   * the source slide cited line by line. The catalogue is Arabic and `project`
+   * holds a literal English rendering of it; `body` puts it back into Arabic,
+   * so this is the client's own wording returning to the language it was
+   * written in — not new marketing prose. Playbook rule 4 still stands: if the
+   * client wants different words here, they supply them.
+   *
+   * It is a plain string rather than something assembled from `project` at
+   * runtime SO THAT A NON-DEVELOPER CAN EDIT IT. That is the whole point of
+   * the feature — the sales teams were retyping this by hand. The cost is that
+   * the figures are stated twice; if `project` changes, change them here too.
+   *
+   * NOT INCLUDED, deliberately: `shareBaseUrl`. See the note at the head of
+   * js/post.js — a deep link belongs on a customer's own offer, never in a
+   * broker group, because it opens the whole inventory and the generator. */
+  post: {
+    title: '🏢 قمر بيزنس بلازا | Qomor Business Plaza',
+    place: 'مدينة بدر، القاهرة',
+
+    /* Keyed by the sheet's own Type values, so a new type shows up as the
+     * generic `unitNoun` rather than dropping an English word into an Arabic
+     * post. The keys match DATA_AR.type in js/i18n.js. */
+    unitNoun: 'وحدة',
+    unitNouns: {
+      Retail:  'محل تجاري',
+      Medical: 'عيادة',
+      Admin:   'مكتب إداري',
+    },
+
+    body: `عن المشروع
+
+قمر بيزنس بلازا — أول سكاي ستريب مول في مصر، في قلب مدينة بدر.
+
+🏗 المساحة البنائية الإجمالية 90,000 متر مربع
+🏬 تجاري 31,000 متر · إداري 3,000 متر · طبي 15,000 متر
+
+✨ مميزات المشروع
+• أول سكاي ستريب مول في مصر
+• منطقة مطاعم
+• سكاي بلازا
+• منطقة بنوك
+• معارض
+• منطقة أطفال
+• نافورة استقبال
+• جيم
+
+🛎 خدمات المشروع
+• إنترنت فايبر عالي السرعة
+• أمن وكاميرات مراقبة 24 ساعة
+• مداخل مخصصة للعيادات
+• منظومة إطفاء وحريق متكاملة
+• ممرات خدمة للمطاعم والمحلات
+• تكييف حديث
+• غرفة رعاية أطفال
+• مسارات بدون درجات في كل المشروع
+
+📍 داخل مدينة بدر
+• جامعة بدر — 2 دقيقة
+• الممشى السياحي — 2 دقيقة
+• الجامعة المصرية الروسية — 2 دقيقة
+• المنطقة الصناعية — 5 دقائق
+• طريق السويس — 5 دقائق
+• طريق القاهرة – الإسماعيلية — 5 دقائق
+
+⏱ وعلى بُعد
+• الشروق — 10 دقائق
+• مدينتي — 15 دقيقة
+• العبور — 15 دقيقة
+• العاصمة الإدارية الجديدة — 15 دقيقة
+• العاشر من رمضان — 20 دقيقة
+• التجمع الخامس — 25 دقيقة
+
+🤝 المطور: الشهري للتنمية العقارية، بالشراكة مع الغانم للتنمية العقارية وكنوز للتنمية العقارية
+🏗 الاستشاري الهندسي: OY Studio`,
+  },
 
   project: {
     builtUpArea:  '90,000 m²',   // p14 المساحة البنائية الإجمالية

@@ -11,7 +11,7 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'qomor-offers-v27';
+const CACHE = 'qomor-offers-v28';
 
 /* Code is revalidated; artwork is not.
  *
@@ -41,6 +41,7 @@ const SHELL = [
   'js/engine.js',
   'js/telemetry.js',
   'js/pdf.js',
+  'js/post.js',
   'js/app.js',
   /* jsPDF is NOT precached, and neither are the embedded fonts. At 410 KB,
    * 291 KB and — for Arabic — a further 376 KB they competed for bandwidth with

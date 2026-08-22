@@ -365,6 +365,77 @@ Traps worth keeping:
 
 ---
 
+## The WhatsApp post
+
+The PDF is a one-to-one document: addressed to a customer, carrying a payment
+schedule, landing in a chat as an attachment. That is the wrong shape for where
+most sales actually start. Agents work broker groups, and in a group a PDF reads
+as a formal offer nobody opens, while a formatted post with a plan image and a
+price reads as a listing and gets forwarded.
+
+So the sales teams stopped using the app for that step and started **retyping
+the post by hand for every unit** — observed on the Eliwah teams, 2026-08-22,
+and the reason this exists. Retyping is slow, it drifts off-message, and it puts
+the price back in the hands of whoever is typing.
+
+`js/post.js` generates the post instead. The header is assembled from the same
+live inventory row the PDF uses; the project copy comes from `CONFIG.post`; the
+drawing is rendered with the unit pinned. Two lengths:
+
+| | text | images |
+|---|---|---|
+| **Short** | unit, floor, code, price, terms | the drawing, unit pinned |
+| **Full** | the above + the project + the maps link | the drawing + the location render |
+
+### The rules it exists to keep
+
+- **The image never shows availability.** The on-screen plan colours every unit
+  by status; that is for the agent. This image is drawn from the clean drawing
+  with only the offered unit marked, because a post must never publish which
+  units are already sold.
+- **No `shareBaseUrl`.** A deep link belongs on a customer's own offer — they
+  reopen it at today's price — but this app is a public static site, and a
+  broker group holding that link has the whole inventory, every price and the
+  generator itself.
+- **Never the net area.** Standing client instruction, 2026-08-12. Only
+  `unit.area` (gross) and `unit.outdoor` appear.
+- **Milestones are named.** A milestone comes out of the 100%, never on top of
+  it, and the engine folds each one into its quarter's instalment rather than
+  giving it a row. So `instalmentAmount` is the amount of a *plain* quarter, and
+  "50% down, 40 quarterly instalments of 8,424" foots to 898,560 against a price
+  of 1,123,200. The post names the boosted quarters; without that line it is
+  short by up to 20% of the price.
+
+### Arabic, whatever language the app is in
+
+The post always goes out in Arabic — it is going to an Egyptian broker group —
+so it cannot use the UI's translation helpers:
+
+- **`postAr()`, not `td()`.** `td()` returns its input unchanged when the app is
+  in English, which is right for the UI and wrong here. An English session using
+  it would have produced `تقسيط 7 years` and `Second Floor` inside an otherwise
+  Arabic post. `postAr()` reads the same `DATA_AR` table and ignores the current
+  language.
+- **`iso()`, not `bidiSafe()`.** Same reason — `bidiSafe()` is a no-op in
+  English. Both skip values containing Arabic, because forcing one
+  left-to-right is the reordering the isolate exists to prevent: `7 سنوات`
+  wrapped in an LTR isolate renders `سنوات 7`.
+
+### Delivery
+
+`navigator.share` with the text and the images together where the browser takes
+both — Android WhatsApp turns the text into the image caption, which is exactly
+the post. Otherwise the text is copied and the images are shared alone. The
+clipboard write happens **before** the share sheet opens, because once it is
+open the page has lost focus and the write is refused.
+
+The share call is behind `isHandheld()` *and* raced against a timeout. Both,
+because the failure it guards against is silent: a promise that neither resolves
+nor rejects is not an error anywhere, so the `finally` that re-enables the button
+never runs. See `canShareFiles()` in `js/pdf.js` for the measurement.
+
+---
+
 ## Typography
 
 **Every font in the PDF is embedded, and this is not optional.** jsPDF's

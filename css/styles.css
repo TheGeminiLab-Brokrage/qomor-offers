@@ -624,3 +624,54 @@ footer p{font-size:11.5px;color:var(--faint);line-height:1.6;border-top:1px soli
   padding:3px 10px;font-size:11px;font-weight:600;border-radius:8px;
   flex:none;line-height:1.6;
 }
+
+/* ---------- the WhatsApp post sheet ----------
+   A full-screen overlay rather than an inline panel: the full post is long, and
+   the agent needs to read all of it before sending it to a group of two hundred
+   brokers. Dark like the rest of the app, so it does not read as a browser
+   dialog that happened to appear over it. */
+.sheet{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:16px}
+.sheet[hidden]{display:none}
+.sheet-bg{position:absolute;inset:0;background:rgba(4,4,6,.72);backdrop-filter:blur(3px)}
+.sheet-card{
+  position:relative;width:min(680px,100%);max-height:calc(100vh - 32px);overflow:auto;
+  background:#121216;border:1px solid var(--edge);border-radius:16px;
+  padding:20px 22px 22px;box-shadow:0 24px 64px rgba(0,0,0,.6);
+}
+.sheet-head{display:flex;align-items:center;gap:12px}
+.sheet-head h3{margin:0;font-size:18px;flex:1;font-weight:650}
+.sheet-x{
+  font:inherit;font-size:26px;line-height:1;cursor:pointer;
+  background:none;border:0;color:var(--dim);padding:0 4px;
+}
+.sheet-x:hover{color:var(--ink)}
+.sheet-sub{margin:6px 0 16px;font-size:12.5px;color:var(--dim);line-height:1.6}
+body.noscroll{overflow:hidden}
+
+.post-controls{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+.seg button{
+  font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+  border:0;background:transparent;color:var(--dim);padding:9px 20px;
+}
+.seg button.on{background:var(--amber);color:#1a1103}
+.post-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);cursor:pointer}
+.post-toggle input{width:16px;height:16px;accent-color:var(--amber)}
+
+/* Always RTL — the post is Arabic whatever language the app is in. */
+#postText{
+  width:100%;font:inherit;font-size:14px;line-height:1.7;
+  background:var(--glass);color:var(--ink);
+  border:1px solid var(--edge);border-radius:10px;padding:12px 14px;resize:vertical;
+}
+#postText:focus{outline:2px solid var(--amber);outline-offset:-1px}
+
+/* Thumbnails of exactly what will be attached. Worth the space: the failure
+   mode of this feature is an agent posting the drawing of the wrong floor. */
+.post-shots{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.post-shots img{
+  width:158px;height:104px;object-fit:cover;
+  border:1px solid var(--edge);border-radius:10px;background:#000;
+}
+.post-shots .note{font-size:12.5px;color:var(--bad)}
+#postNote.bad{color:var(--bad)}
