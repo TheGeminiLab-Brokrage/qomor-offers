@@ -428,11 +428,54 @@ function collapseWarnings(warnings, keep = 4) {
   return out;
 }
 
+/* How long to wait for one inventory URL before giving up on it.
+ *
+ * There was NO timeout here until 2026-08-23, so the app waited exactly as long
+ * as Google took. Reported from the field that day: the unit list sat on
+ * "Loading inventory…" for about a minute. Measured the same morning, one of
+ * these endpoints returned nothing at all after 45 seconds — so a minute is
+ * precisely what an agent saw, in front of a customer, with no way to tell
+ * whether the app was broken.
+ *
+ * Ten seconds, not the six the Eliwah build uses. These sheets normally answer
+ * in about a second, but they are 180 KB and 90 KB and a weak phone connection
+ * can legitimately need several; six would drop to a saved copy too eagerly.
+ * Ten is past any healthy response and well short of looking broken.
+ *
+ * Giving up is only safe because the app keeps trying on its own — app.js polls
+ * every REFRESH_MS and again whenever the tab is brought back — so a stall now
+ * costs one cycle instead of the rest of the session. */
+const SHEET_TIMEOUT_MS = 10000;
+
+/* And a ceiling for the WHOLE workbook, across all of its URLs.
+ *
+ * Each source has two addresses, so a flat per-URL timeout meant the worst case
+ * was 10s + 10s = 20 seconds of blank screen, measured. Still far better than
+ * the old wait-forever, but a long time to stand in front of a customer.
+ *
+ * The second address is worth trying even after the first has timed out — that
+ * is not a guess: on 2026-08-23 the gviz endpoint returned nothing after 45
+ * seconds while the export endpoint answered the same sheet in 0.6s. So the
+ * fallback stays, it just has to fit inside the budget: the first URL may take
+ * the full ten, and whatever is left goes to the next one. Export has always
+ * answered in under three seconds when it answers at all. */
+const SOURCE_BUDGET_MS = 14000;
+
 /** One workbook: try each URL in turn, return its units or null. */
 async function loadOneSheet(source, planAreas, errors, opts = {}) {
+  const deadline = Date.now() + SOURCE_BUDGET_MS;
   for (const url of source.urls) {
+    const left = deadline - Date.now();
+    // Under two seconds left is not a fair try; call it and fall back.
+    if (left < 2000) { errors.push(`${source.label}: out of time`); break; }
+    const budget = Math.min(SHEET_TIMEOUT_MS, left);
+    /* AbortController rather than racing a timer: a race leaves the original
+       request running, and a stalled fetch would go on holding one of the very
+       few connections a phone has. This actually cancels it. */
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), budget) : null;
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
       if (!res.ok) { errors.push(`${res.status} from ${source.label}`); continue; }
       const text = await res.text();
       // A login page means the sheet stopped being published.
@@ -442,10 +485,47 @@ async function loadOneSheet(source, planAreas, errors, opts = {}) {
       if (!units.length) { errors.push(`${source.label}: ${warnings[0] || 'no usable rows'}`); continue; }
       return { units, warnings };
     } catch (err) {
-      errors.push(`${source.label}: ${err.message}`);
+      // An abort is a timeout, and "signal is aborted without reason" tells an
+      // agent nothing. Name what actually happened.
+      errors.push(err && err.name === 'AbortError'
+        ? `${source.label}: no answer within ${Math.round(budget / 1000)}s`
+        : `${source.label}: ${err.message}`);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
   return null;
+}
+
+/**
+ * Load js/data.js — the offline snapshot — ONLY when it is actually needed.
+ *
+ * It is 355 KB, because this project has 1,716 rows across two workbooks. A
+ * script tag in index.html would put that on the critical path of every single
+ * visit, on every phone, to serve a copy that is used only when Google cannot
+ * be reached — which would cost more load time than the fallback ever saves.
+ * (The Eliwah build does load its snapshot up front, but that one is 4 KB.)
+ *
+ * Fetched on demand instead. js/data.js matches the CODE pattern in sw.js, so
+ * the service worker caches it the first time it is pulled and serves it from
+ * there afterwards — including with no connection at all.
+ *
+ * Resolves to null rather than throwing: failing to load the fallback must not
+ * replace "the sheet is slow" with a blank screen and a script error.
+ */
+let snapshotPromise = null;
+function loadSnapshotFile() {
+  if (typeof SNAPSHOTS !== 'undefined') return Promise.resolve(SNAPSHOTS);
+  if (typeof document === 'undefined') return Promise.resolve(null);   // node tests
+  if (snapshotPromise) return snapshotPromise;
+  snapshotPromise = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'js/data.js';
+    s.onload = () => resolve(typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS : null);
+    s.onerror = () => { snapshotPromise = null; resolve(null); };
+    document.head.appendChild(s);
+  });
+  return snapshotPromise;
 }
 
 /**
@@ -504,7 +584,8 @@ async function loadInventory(planAreas, opts = {}) {
   //
   // Snapshots are keyed by project, so one project can never be shown another's
   // units and prices. If this project has no snapshot, say so and show nothing.
-  const snap = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS[CONFIG.id] : null;
+  const all = await loadSnapshotFile();
+  const snap = all ? all[CONFIG.id] : null;
   if (!snap) {
     return {
       units: [],
@@ -515,10 +596,34 @@ async function loadInventory(planAreas, opts = {}) {
     };
   }
 
-  const fromSnapshot = normalizeRows(parseCSV(snap.csv), planAreas);
+  /* ONE ENTRY PER WORKBOOK, merged the same way the live path merges them.
+   *
+   * The snapshot holds the project inventory and the third floor as separate
+   * CSVs, because they are separate files with their own header rows. They are
+   * normalised separately and then combined, with the same duplicate check the
+   * live merge uses — otherwise the saved copy could disagree with the live one
+   * about which workbook a unit's price came from.
+   *
+   * `snap.csv` is the older single-CSV shape the Eliwah build writes. Still
+   * read, so a snapshot generated before 2026-08-23 does not silently stop
+   * working. */
+  const snapSheets = snap.sheets || (snap.csv ? [{ label: 'the saved inventory', csv: snap.csv }] : []);
+  const snapUnits = [];
+  const snapWarnings = [];
+  const snapSeen = new Set();
+  for (const s of snapSheets) {
+    const got = normalizeRows(parseCSV(s.csv), planAreas);
+    snapWarnings.push(...got.warnings);
+    for (const u of got.units) {
+      if (snapSeen.has(u.code)) continue;
+      snapSeen.add(u.code);
+      snapUnits.push(u);
+    }
+  }
+
   return {
-    units: fromSnapshot.units,
-    warnings: fromSnapshot.warnings,
+    units: snapUnits,
+    warnings: snapWarnings,
     live: false,
     fetchedAt: snap.takenAt ? new Date(snap.takenAt) : null,
     errors,

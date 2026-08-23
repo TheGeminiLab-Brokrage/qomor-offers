@@ -465,6 +465,28 @@ function openPostSheet() {
   document.body.classList.add('noscroll');
   postFlash('');
   renderPostPreview();
+  warnIfStale();
+}
+
+/**
+ * A post must not quietly carry a price the app is unsure about.
+ *
+ * This is the one delivery path where a wrong number cannot be taken back. A
+ * PDF goes to one customer, who can be sent a corrected one; a post goes into
+ * broker groups and is forwarded, screenshotted and quoted for weeks. And the
+ * app IS sometimes unsure: when a workbook cannot be reached it falls back to
+ * the snapshot in js/data.js and marks itself stale — easy to miss in a header
+ * bar while the unit card in front of you looks perfectly normal.
+ *
+ * Not a hard block. The agent may have good reason, and they can see the date
+ * and judge. But it has to be a decision rather than an accident, so it sits
+ * beside the Send button instead of up in the header where it was being missed.
+ */
+function warnIfStale() {
+  if (state.live) return;
+  postFlash(t('post.stale', {
+    date: state.fetchedAt ? fmtDate(state.fetchedAt) : t('post.staleUnknownDate'),
+  }), true);
 }
 
 function closePostSheet() {

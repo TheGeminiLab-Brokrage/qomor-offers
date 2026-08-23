@@ -183,6 +183,8 @@ const STRINGS = {
     'post.copyFailed': 'Could not copy — select the text and copy it.',
     'post.failed': 'Could not build the post: {message}',
     'post.noImage': 'Drawing unavailable: {message}',
+    'post.stale': '⚠ These are SAVED prices from {date}, not live — the inventory sheet could not be reached. Press Refresh before posting this to a group.',
+    'post.staleUnknownDate': 'an unknown date',
 
     'footer.assumptions': 'Assumptions pending a signed sample offer:',
     'warn.one': 'One note from the sheet',
@@ -333,6 +335,8 @@ const STRINGS = {
     'post.copyFailed': 'تعذّر النسخ — حدّد النص وانسخه يدويًا.',
     'post.failed': 'تعذّر تجهيز البوست: {message}',
     'post.noImage': 'الرسم غير متاح: {message}',
+    'post.stale': '⚠ هذه أسعار محفوظة من {date} وليست مباشرة — تعذّر الوصول إلى شيت المخزون. اضغط تحديث قبل نشر البوست في جروب.',
+    'post.staleUnknownDate': 'تاريخ غير معروف',
 
     'footer.assumptions': 'افتراضات في انتظار عرض موقّع من العميل:',
     'warn.one': 'ملاحظة واحدة من الشيت',
