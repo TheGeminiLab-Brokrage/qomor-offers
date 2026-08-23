@@ -1,0 +1,33 @@
+# Response headers for Cloudflare Pages.
+#
+# INERT ON GITHUB PAGES — it serves this as a plain file and ignores it. It
+# takes effect the moment Cloudflare Pages serves the site, so it is committed
+# ahead of the move.
+#
+# WHY IT EXISTS. GitHub Pages sent a flat `Cache-Control: max-age=600` for
+# everything it served, sw.js included. A ten-minute browser cache in FRONT of
+# the service worker is the stale-code trap this repo's sw.js header comments
+# describe from the other side: the worker's CACHE constant is supposed to be
+# the single thing deciding what a returning phone runs, and an HTTP cache the
+# app cannot see gets a vote it should not have.
+#
+# So: the service worker owns caching. The network layer revalidates and stays
+# out of its way.
+
+/*
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# The worker itself must never be held. A stale sw.js cannot be fixed by
+# bumping CACHE, because the file that carries the new CACHE is the stale one.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Artwork is the exception. `no-cache` still costs a conditional request per
+# file, and on an Egyptian mobile connection forty 304s is seconds of latency
+# for artwork that did not change. A day, revalidated after that — which keeps
+# the house rule working: replace a render and its FILENAME changes, or the
+# change is not guaranteed to reach a phone that already has the old one.
+/assets/*
+  Cache-Control: public, max-age=86400, must-revalidate
