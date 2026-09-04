@@ -453,6 +453,41 @@ function arabicCheck() {
   r.failures.forEach((f) => ok(false, `arabic: ${f}`));
 }
 
+/* The build stamp has to be identical in three files.
+ *
+ * index.html asks for `js/app.js?v=N`; sw.js precaches the shell at exactly
+ * those URLs and names its cache after the same N. A cache lookup matches the
+ * WHOLE url including the query, so if the two drift, every precached file
+ * becomes unreachable and the app quietly loses offline support while looking
+ * completely healthy online — the kind of fault nobody finds until an agent is
+ * somewhere with no signal. `node scripts/bump-build.js` keeps them in step;
+ * this makes forgetting it fail the suite instead of shipping. */
+function buildStampCheck() {
+  const fs = require('fs');
+  const path = require('path');
+  const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
+
+  const sw = /const BUILD = '(\d+)';/.exec(read('sw.js'));
+  ok(!!sw, 'sw.js declares a BUILD number');
+  if (!sw) return;
+  const build = sw[1];
+
+  const html = read('index.html');
+  const stamps = [...html.matchAll(/(?:src|href)="((?:js|css)\/[\w.-]+)(\?v=(\d+))?"/g)];
+  const unstamped = stamps.filter((m) => !m[2]).map((m) => m[1]);
+  const wrong = stamps.filter((m) => m[3] && m[3] !== build).map((m) => `${m[1]}?v=${m[3]}`);
+
+  ok(stamps.length > 0, `index.html references ${stamps.length} code assets`);
+  ok(!unstamped.length,
+     `every code asset in index.html carries ?v= (${unstamped.join(', ') || 'all stamped'})`);
+  ok(!wrong.length,
+     `every stamp matches sw.js BUILD=${build} (${wrong.join(', ') || 'all match'})`);
+
+  const version = /version: 'qomor-offers-v(\d+)'/.exec(read('js/config.js'));
+  ok(version && version[1] === build,
+     `js/config.js telemetry version is v${build}` + (version ? ` (found v${version[1]})` : ''));
+}
+
 (async () => {
   if (process.argv.includes('--live')) {
     try { await live(); } catch (e) { ok(false, `live sheet: ${e.message}`); }
@@ -460,8 +495,12 @@ function arabicCheck() {
   worked();
   i18nCheck();
   arabicCheck();
+  buildStampCheck();
 
-  console.log('\n══ Assumptions still to be settled by a signed sample offer');
+  /* Confirmed by the client 2026-09-04 (see config.js), so this is no longer an
+     open question — but it stays printed after every run, because these are the
+     rules every schedule in the app is built on. */
+  console.log('\n══ Plan terms, as confirmed by the client 2026-09-04');
   G.ASSUMPTIONS.forEach((a) => console.log(`   • ${a}`));
 
   console.log(`\n${pass} passed, ${fail} failed`);

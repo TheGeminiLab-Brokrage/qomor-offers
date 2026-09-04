@@ -8,7 +8,7 @@
 <link rel="manifest" href="site.webmanifest">
 <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
 <link rel="icon" href="assets/icons/icon-192.png">
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=36">
 <!-- The masterplan render is the first thing anyone sees, but its src is set by
      renderHero() — which only runs once the inventory has parsed, so the image
      did not START downloading until then and the page sat empty for the whole
@@ -67,6 +67,80 @@
 <div id="warnings" class="warnings" hidden></div>
 
 <main>
+  <!-- STEP 0 · search by budget.
+       Above the building picker, because a customer who arrives with a budget
+       rather than a unit cannot start at step 1 — the agent would be guessing
+       units and pricing them one at a time until something fit.
+
+       COLLAPSED by default, and deliberately not a numbered step. The masterplan
+       render is the strongest thing on the page and an agent who already knows
+       the unit needs none of this; making it a fifth numbered step would push
+       the render below the fold for everyone to serve the minority who need it.
+       Open, it drives exactly the same selectUnit() the pins and the list do. -->
+  <section class="step budgetstep" id="stepBudget">
+    <button class="budget-cta" id="budgetOpen" type="button" aria-expanded="false">
+      <span class="bc-text">
+        <b data-i18n="budget.cta">Customer has a budget in mind?</b>
+        <i data-i18n="budget.ctaSub">Find every unit that fits it</i>
+      </span>
+      <span class="bc-mark" aria-hidden="true">+</span>
+    </button>
+
+    <div id="budgetBody" hidden>
+      <div class="budget">
+        <label>
+          <span class="lab" data-i18n="budget.cash">Cash available now</span>
+          <span class="money">
+            <input id="inDown" inputmode="numeric" autocomplete="off" value="1,500,000">
+            <span class="cur">EGP</span>
+          </span>
+          <span class="hint" data-i18n="budget.cashHint">Pays the down payment on contract.</span>
+        </label>
+        <label>
+          <span class="lab" data-i18n="budget.monthly">Budget per month</span>
+          <span class="money">
+            <input id="inMonthly" inputmode="numeric" autocomplete="off" value="60,000">
+            <span class="cur">EGP</span>
+          </span>
+          <span class="hint" id="qHint"></span>
+        </label>
+      </div>
+
+      <div class="refine">
+        <select id="inType"></select>
+        <select id="inFloor"></select>
+        <select id="inSort"></select>
+      </div>
+
+      <!-- THE LARGE-PAYMENT QUESTION, asked rather than defaulted (user's
+           decision 2026-09-04). Neither answer is safe to assume: one tells a
+           customer who can plainly afford a unit that nothing fits, the other
+           qualifies them on a plan with three payments ten times the size of
+           the rest. Nothing is searched until it is answered.
+
+           The MAINTENANCE is not part of this question and never enters the
+           monthly test either way — see the rule at the top of js/afford.js. -->
+      <div class="milestone unanswered" id="milestoneAsk">
+        <p class="q" id="msQuestion"></p>
+        <p class="qnote" data-i18n="budget.msNote">Maintenance is separate.</p>
+        <div class="seg" id="msSeg">
+          <button type="button" data-strict="1" data-i18n="budget.msWith">Yes, count them</button>
+          <button type="button" data-strict="0" data-i18n="budget.msWithout">No, leave them out</button>
+        </div>
+      </div>
+
+      <div class="tally" id="tally" hidden>
+        <span class="big" id="tallyBig">—</span>
+        <span class="of" id="tallyOf"></span>
+      </div>
+      <p class="stretch" id="stretch" hidden></p>
+      <div class="hits" id="hits"></div>
+      <button class="ghost more" id="btnMore" type="button" hidden></button>
+      <div class="nothing" id="nothing" hidden></div>
+      <div class="awaiting" id="awaiting" data-i18n="budget.awaiting">Answer the question above to see what fits.</div>
+    </div>
+  </section>
+
   <section class="step" id="stepBuilding">
     <h2><i>1</i> <span data-i18n="step.1">Building</span> <small data-i18n="step.1.hint">Tap a building on the view, or use the cards</small></h2>
     <!-- The masterplan picker. Its only output is selectBuilding(id) — the same
@@ -257,22 +331,25 @@
 <!-- i18n first: config.js is untouched English (it is the source of truth and
      the tests assert on it), and everything drawn on screen is translated at
      render time on top of it. See the header comment in js/i18n.js. -->
-<script src="js/i18n.js"></script>
+<script src="js/i18n.js?v=36"></script>
 <!-- Arabic for the PDF, and the shaper that makes it drawable. Both are small
      and both are needed before the first export; the 376 KB Arabic FONT is the
      part that loads lazily, and only for an Arabic offer. -->
-<script src="js/arabic.js"></script>
-<script src="js/pdf-ar.js"></script>
-<script src="js/config.js"></script>
-<script src="js/plan.js"></script>
-<script src="js/sheet.js"></script>
-<script src="js/engine.js"></script>
+<script src="js/arabic.js?v=36"></script>
+<script src="js/pdf-ar.js?v=36"></script>
+<script src="js/config.js?v=36"></script>
+<script src="js/plan.js?v=36"></script>
+<script src="js/sheet.js?v=36"></script>
+<script src="js/engine.js?v=36"></script>
 <!-- Analytics. Inert until CONFIG.telemetry carries a url and key, and it can
      never break an offer — see the three rules at the top of the file. -->
-<script src="js/telemetry.js"></script>
-<script src="js/pdf.js"></script>
-<script src="js/post.js"></script>
-<script src="js/app.js"></script>
+<script src="js/telemetry.js?v=36"></script>
+<script src="js/pdf.js?v=36"></script>
+<script src="js/post.js?v=36"></script>
+<!-- Search by budget (step 0). Loaded BEFORE app.js, which calls its
+     afford.rebuild() whenever the inventory changes. -->
+<script src="js/afford.js?v=36"></script>
+<script src="js/app.js?v=36"></script>
 <!-- The service worker makes the app open without a connection and makes the
      browser offer "install to home screen". It never caches the inventory —
      see the rule at the top of sw.js. Skipped on file://, where registration

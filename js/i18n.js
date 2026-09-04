@@ -186,7 +186,10 @@ const STRINGS = {
     'post.stale': '⚠ These are SAVED prices from {date}, not live — the inventory sheet could not be reached. Press Refresh before posting this to a group.',
     'post.staleUnknownDate': 'an unknown date',
 
-    'footer.assumptions': 'Assumptions pending a signed sample offer:',
+    /* Was "Assumptions pending a signed sample offer". The client confirmed all
+       four on 2026-09-04 (see config.js), so calling them pending in front of a
+       customer now understates the app rather than being careful about it. */
+    'footer.assumptions': 'Terms of the plan, as confirmed by the developer:',
     'warn.one': 'One note from the sheet',
     'warn.many': '{n} notes from the sheet',
     'warn.stale': 'Could not reach the live sheet, so these prices may be out of date.',
@@ -196,6 +199,66 @@ const STRINGS = {
     'err.removed': 'That unit has been removed from the sheet.',
     'err.badLink': 'This link points at {code}, which is not in the sheet.',
     'err.footing': '⚠ Schedule sums to {paid} but the price is {price} — do not issue this offer.',
+
+    /* ------------------------------------------------- search by budget --
+     * The step before the building picker: the customer arrives with a budget
+     * rather than a unit, and this searches every available unit against all
+     * six plans. See js/afford.js. */
+    'budget.cta': 'Customer has a budget in mind?',
+    'budget.ctaSub': 'Find every unit that fits it',
+    'budget.close': 'Close',
+    'budget.cash': 'Cash available now',
+    'budget.cashHint': 'Pays the down payment on contract.',
+    'budget.monthly': 'Budget per month',
+    /* Instalments are quarterly. A customer holds a monthly budget, so the
+       screen speaks in months and states the quarterly figure everywhere. */
+    'budget.quarterHint': 'Instalments are quarterly — that is {q} every 3 months.',
+    'budget.anyType': 'Any type',
+    'budget.anyFloor': 'Any floor',
+    'budget.sortArea': 'Biggest unit first',
+    'budget.sortMonthly': 'Lowest monthly first',
+    'budget.sortPrice': 'Cheapest first',
+    'budget.sortPriceDesc': 'Most expensive first',
+
+    /* The large-payment question. Asked, never defaulted — see js/afford.js.
+       The maintenance is NOT part of this choice: it is always left out of the
+       monthly budget, on the user's instruction 2026-09-04. Saying so here is
+       what stops an agent assuming the switch covers it too. */
+    /* A question, and two answers to it. The buttons used to be descriptions
+       ("With the large payments" / "Without them"), which made the agent
+       translate a label into an answer before they could tap. */
+    'budget.msQuestion': 'Payment plans from 6 to 10 years have milestone payments. Should they be counted in the monthly instalment shown?',
+    /* A separate, quieter line rather than a third clause in the question. The
+       maintenance is never part of this choice (user's rule, 2026-09-04), but
+       saying so inside the question made an already long sentence longer. */
+    'budget.msNote': 'Maintenance is separate.',
+    'budget.msWith': 'Yes, count them',
+    'budget.msWithout': 'No, leave them out',
+    'budget.awaiting': 'Answer the question above to see what fits.',
+
+    'budget.tally': 'of {available} available units fit {down} down and {monthly} a month',
+    'budget.stretch': 'Stretch to ~{monthly} a month and {n} more units come into reach.',
+    'budget.stretchOne': 'Stretch to ~{monthly} a month and one more unit comes into reach.',
+    'budget.apply': 'Apply',
+    'budget.more': 'Show {n} more of {total}',
+    'budget.noneAtAll': 'No available units match those filters at all.',
+    'budget.none': 'Nothing fits that budget. The closest is {code}{area} on the {plan} plan: {down} down and ~{monthly} a month.',
+    'budget.noneCash': 'That is {n} more cash than entered.',
+    'budget.noneMonthly': 'That is {n} more a month.',
+    'budget.noneMilestone': 'Without counting the milestone payments, {code} fits on the {plan} plan at ~{monthly} a month — its ordinary instalment is inside the budget and only the {max} payment is not.',
+
+    'budget.perMonth': '/ month',
+    'budget.everyQuarter': '{n} every 3 months',
+    'budget.down': 'down · {pct}',
+    'budget.onPlan': 'On the {plan} plan',
+    'budget.priceIs': 'Price {price} {currency}',
+    'budget.afterDiscount': 'after {pct} discount',
+    'budget.outdoor': '+ {n} outdoor',
+    /* Everything the monthly figure does NOT include, on every card. */
+    'budget.alsoDue': 'Also due: {items}',
+    'budget.milestoneQuarters': '{n} payments of {amount}',
+    'budget.maintenanceDue': '{pct} maintenance, {amount}, at month {month}',
+    'budget.build': 'Build this offer',
   },
 
   ar: {
@@ -338,7 +401,7 @@ const STRINGS = {
     'post.stale': '⚠ هذه أسعار محفوظة من {date} وليست مباشرة — تعذّر الوصول إلى شيت المخزون. اضغط تحديث قبل نشر البوست في جروب.',
     'post.staleUnknownDate': 'تاريخ غير معروف',
 
-    'footer.assumptions': 'افتراضات في انتظار عرض موقّع من العميل:',
+    'footer.assumptions': 'شروط نظام السداد، كما أكّدها المطوّر:',
     'warn.one': 'ملاحظة واحدة من الشيت',
     'warn.many': '{n} ملاحظات من الشيت',
     'warn.stale': 'تعذّر الوصول إلى الشيت المباشر، وقد تكون هذه الأسعار قديمة.',
@@ -348,6 +411,53 @@ const STRINGS = {
     'err.removed': 'تم حذف هذه الوحدة من الشيت.',
     'err.badLink': 'هذا الرابط يشير إلى {code} وهي غير موجودة في الشيت.',
     'err.footing': '⚠ مجموع الجدول {paid} بينما السعر {price} — لا تُصدر هذا العرض.',
+
+    'budget.cta': 'العميل عنده ميزانية محددة؟',
+    'budget.ctaSub': 'اعرف كل الوحدات التي تناسبها',
+    'budget.close': 'إغلاق',
+    'budget.cash': 'المتاح نقدًا الآن',
+    'budget.cashHint': 'يُدفع كمقدم عند التعاقد.',
+    'budget.monthly': 'الميزانية الشهرية',
+    'budget.quarterHint': 'الأقساط ربع سنوية — أي {q} كل 3 شهور.',
+    'budget.anyType': 'كل الأنواع',
+    'budget.anyFloor': 'كل الأدوار',
+    'budget.sortArea': 'الأكبر مساحة أولاً',
+    'budget.sortMonthly': 'الأقل شهريًا أولاً',
+    'budget.sortPrice': 'الأقل سعرًا أولاً',
+    'budget.sortPriceDesc': 'الأعلى سعرًا أولاً',
+
+    /* "دفعات" on its own, not "دفعات كبيرة" — the user's wording, 2026-09-04.
+       It carries in Arabic without the adjective, because دفعة and قسط are
+       already different things to an Egyptian buyer: the sentence contrasts
+       الدفعات with القسط الشهري, so "كبيرة" was doing no work. */
+    'budget.msQuestion': 'خطط السداد من 6 إلى 10 سنوات بها دفعات. هل تُحسب ضمن القسط الشهري المعروض؟',
+    'budget.msNote': 'الصيانة منفصلة.',
+    'budget.msWith': 'نعم، احسبها',
+    'budget.msWithout': 'لا، بدونها',
+    'budget.awaiting': 'أجب عن السؤال بالأعلى لعرض الوحدات المناسبة.',
+
+    'budget.tally': 'من {available} وحدة متاحة تناسب {down} مقدم و{monthly} شهريًا',
+    'budget.stretch': 'بزيادة الميزانية إلى ~{monthly} شهريًا تدخل {n} وحدات إضافية في النطاق.',
+    'budget.stretchOne': 'بزيادة الميزانية إلى ~{monthly} شهريًا تدخل وحدة إضافية في النطاق.',
+    'budget.apply': 'تطبيق',
+    'budget.more': 'عرض {n} أخرى من {total}',
+    'budget.noneAtAll': 'لا توجد وحدات متاحة مطابقة لهذه الفلاتر.',
+    'budget.none': 'لا توجد وحدة تناسب هذه الميزانية. أقربها {code}{area} على خطة {plan}: {down} مقدم و~{monthly} شهريًا.',
+    'budget.noneCash': 'أي بزيادة {n} عن المبلغ المدخل.',
+    'budget.noneMonthly': 'أي بزيادة {n} شهريًا.',
+    'budget.noneMilestone': 'بدون احتساب الدفعات، تناسبه {code} على خطة {plan} بـ~{monthly} شهريًا — القسط العادي داخل الميزانية والدفعة {max} هي وحدها خارجها.',
+
+    'budget.perMonth': 'شهريًا',
+    'budget.everyQuarter': '{n} كل 3 شهور',
+    'budget.down': 'مقدم · {pct}',
+    'budget.onPlan': 'على خطة {plan}',
+    'budget.priceIs': 'السعر {price} {currency}',
+    'budget.afterDiscount': 'بعد خصم {pct}',
+    'budget.outdoor': '+ {n} خارجي',
+    'budget.alsoDue': 'مستحق أيضًا: {items}',
+    'budget.milestoneQuarters': '{n} دفعات بقيمة {amount}',
+    'budget.maintenanceDue': 'صيانة {pct} بقيمة {amount} في الشهر {month}',
+    'budget.build': 'جهّز العرض',
   },
 };
 

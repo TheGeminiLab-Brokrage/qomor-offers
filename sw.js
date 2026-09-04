@@ -9,9 +9,34 @@
  * not on our own origin is passed straight through and never touched — the
  * sheet lives on docs.google.com, so it can never be served from here.
  *
- * Bump CACHE when the app shell changes, or returning phones keep the old one.
+ * ONE NUMBER DRIVES A DEPLOY: BUILD. It names the cache, and index.html asks for
+ * every script and stylesheet as `js/app.js?v=<BUILD>`. Bump it in all three
+ * places at once with `node scripts/bump-build.js`, which is also checked by the
+ * test suite so the three can never drift apart.
+ *
+ * WHY THE QUERY STRING EXISTS — this is the fix for a real, repeatedly observed
+ * failure, not decoration. Navigations are network-first, so a returning phone
+ * gets the NEW index.html immediately, while the code below is
+ * stale-while-revalidate and hands back the OLD JavaScript for that same load.
+ * New markup against old code is not "slightly behind": on 2026-09-04 it put
+ * raw translation keys — "budget.msWith" — on screen in place of the buttons,
+ * and the app only looked right on the second load. That is a broken screen in
+ * front of a customer, once per deploy, for every agent.
+ *
+ * Stamping the build onto the URL removes the window entirely: new markup asks
+ * for `?v=34`, which is not in the cache under any circumstances, so it can only
+ * be answered from the network. The two halves are therefore always the same
+ * build. The cost is that the first load after a deploy re-fetches ~90 KB of
+ * code instead of serving it from cache; every load after that is unchanged, and
+ * offline still works because the shell is precached at these same URLs.
+ *
+ * DO NOT "tidy" the query off the SHELL entries. A cache lookup matches the full
+ * URL including the query, so a shell precached as `js/app.js` would never
+ * answer a request for `js/app.js?v=34`, and the app would silently lose offline
+ * support while looking perfectly healthy online.
  */
-const CACHE = 'qomor-offers-v30';
+const BUILD = '36';
+const CACHE = `qomor-offers-v${BUILD}`;
 
 /* Code is revalidated; artwork is not.
  *
@@ -28,9 +53,9 @@ const CODE = /\.(js|css|html|webmanifest)$/i;
  * about 5 MB of them — are deliberately NOT here. They are cached on first use
  * instead, see below, so opening the app on mobile data does not pull the whole
  * PDF artwork set before anything appears. */
-const SHELL = [
-  './',
-  'index.html',
+/* Precached at exactly the URLs index.html asks for — build stamp included.
+ * See the note above: without the stamp these entries can never be hit. */
+const STAMPED = [
   'css/styles.css',
   'js/i18n.js',
   'js/arabic.js',
@@ -42,13 +67,25 @@ const SHELL = [
   'js/telemetry.js',
   'js/pdf.js',
   'js/post.js',
+  'js/afford.js',
   'js/app.js',
+].map((p) => `${p}?v=${BUILD}`);
+
+const SHELL = [
+  './',
+  'index.html',
+  ...STAMPED,
   /* jsPDF is NOT precached, and neither are the embedded fonts. At 410 KB,
    * 291 KB and — for Arabic — a further 376 KB they competed for bandwidth with
    * the very first paint on a phone, which is the moment that matters most; all
    * are fetched and cached on first use instead, and app.js warms them when
    * idle. js/arabic.js and js/pdf-ar.js above ARE precached: together they are
-   * a few KB, and they are needed to draw a single Arabic label. */
+   * a few KB, and they are needed to draw a single Arabic label.
+   *
+   * They are also UNSTAMPED, because nothing in index.html references them —
+   * they are pulled by js/pdf.js at run time. That is safe for a vendored
+   * library and a font, which change only when their filename does. If either
+   * ever starts changing in place, stamp it at the point it is loaded. */
   'site.webmanifest',
   'assets/logo.png',
   'assets/icons/icon-192.png',

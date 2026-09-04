@@ -9,7 +9,8 @@
  *   - the pricing formula was reverse-engineered from the Availabilty tab and
  *     checked against all 176 rows with zero exceptions
  *   - the six plans were read off the Arabic payment-plan tabs
- * They have NOT been confirmed against a signed sample offer. See ASSUMPTIONS.
+ * The four commercial rules they imply were CONFIRMED by the client 2026-09-04;
+ * still not cross-checked against an issued offer document. See ASSUMPTIONS.
  */
 
 const CONFIG = {
@@ -44,7 +45,7 @@ const CONFIG = {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
     project: 'qomor',
-    version: 'qomor-offers-v29',  // keep in step with sw.js, so a bad build is identifiable
+    version: 'qomor-offers-v36',  // keep in step with sw.js, so a bad build is identifiable
   },
 
   /* ---------------------------------------------------------------- sheet --
@@ -245,9 +246,12 @@ const CONFIG = {
   /* ----------------------------------------------------------- maintenance --
    * 10% on every plan, due at month 42 (3.5 years), which is also the
    * delivery date. Changed 2026-08-20 on the client's instruction — was 9%
-   * at month 36. Confirm this against the client's payment-plan tabs once
-   * they update the shared sheet; it did not reflect this change as of
-   * 2026-08-19. */
+   * at month 36.
+   *
+   * RE-CONFIRMED 2026-09-04 (client, relayed by the user), so the earlier
+   * "check this once they update the shared sheet" caveat is closed. The
+   * workbook's own payment-plan tabs may still show the old 9% / month 36;
+   * the instruction is the authority here, not the tabs. */
   maintenanceRate: 0.10,
   maintenanceDueMonth: 42,
   deliveryMonth: 42,
@@ -509,8 +513,25 @@ const CONFIG = {
   contact: null,
 };
 
-/* Assumptions a signed sample offer would settle. Surfaced in the UI and
- * printed by the test suite so they cannot quietly become fact. */
+/* The four commercial rules the schedule is built on.
+ *
+ * These were ASSUMPTIONS until 2026-09-04 — derived by reverse-engineering the
+ * client's workbook rather than given as a brief, and labelled as such on screen
+ * and in the tests so they could not quietly become fact.
+ *
+ * ALL FOUR WERE CONFIRMED BY THE CLIENT on 2026-09-04, relayed by the user:
+ * the plan is calculated on the discounted Final Price; the 10% maintenance is
+ * on that same discounted price and falls once at month 42; the first quarterly
+ * instalment is three months after signing; and no garage, storage or admin fee
+ * is added. They are still printed on the customer's terms page — they are real
+ * terms of sale, and worth stating — but they are no longer open questions, and
+ * the footer no longer calls them pending.
+ *
+ * WHAT IS STILL NOT DONE: none of this has been cross-checked against an offer
+ * document El Shihry actually issued. A confirmation of the rules and a signed
+ * schedule agreeing line by line are different strengths of evidence. If one is
+ * ever supplied, diff it against buildSchedule() for the same unit before
+ * assuming it matches. */
 const ASSUMPTION_TEXT = {
   finalPrice: 'The instalment plan is calculated on the sheet\'s Final Price (after the per-unit discount), not on the Total Unit Price.',
   maintenance: 'The 10% maintenance is calculated on the same Final Price, and is a single payment at month 42.',

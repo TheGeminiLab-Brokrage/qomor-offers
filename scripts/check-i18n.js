@@ -42,7 +42,7 @@ const ar = keysOf('ar');
  * the safe way round — a key wrongly believed to be in use is a tidiness
  * problem; one wrongly believed dead invites someone to delete it. */
 const used = new Set();
-for (const f of ['js/app.js', 'js/i18n.js']) {
+for (const f of ['js/app.js', 'js/i18n.js', 'js/afford.js']) {
   for (const m of read(f).matchAll(/'([a-z][\w-]*(?:\.[\w-]+)+)'/g)) used.add(m[1]);
 }
 const html = read('index.html');

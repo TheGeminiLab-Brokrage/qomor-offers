@@ -87,6 +87,11 @@ async function refresh({ quiet } = {}) {
   renderSync();
   renderWarnings();
   renderBuildings();
+  /* Step 0 prices every available unit against all six plans, so it has to be
+     re-priced from the same read that redraws everything else — otherwise a
+     unit sold in the sheet would go on being offered by the budget search after
+     it had disappeared from the floor plan. */
+  afford.rebuild(state.units);
 
   /* A unit selected before the refresh may have just been sold. Re-resolve it
    * from the new data rather than keeping a stale object on screen — this is
@@ -915,11 +920,13 @@ function renderAll() {
   renderSync();
   renderWarnings();
   renderBuildings();
+  afford.relang();
   if (state.floorCode) { renderFloors(); renderUnits(); }
   if (state.unit) { renderUnitCard(); renderPlans(); renderSchedule(); }
 }
 
 applyLang();
+afford.init();
 document.querySelectorAll('#langSw button[data-lang]').forEach((b) => {
   b.onclick = () => setLang(b.getAttribute('data-lang'), renderAll);
 });

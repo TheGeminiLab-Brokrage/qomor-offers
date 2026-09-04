@@ -22,8 +22,10 @@
  * Deriving the rate and absorbing the drift in the final instalment means the
  * rows always sum to the price exactly.
  *
- * !! NOT VERIFIED against a signed sample offer — none has been supplied. The
- * open assumptions are listed in CONFIG's ASSUMPTIONS and printed by the tests.
+ * The four commercial rules behind this — discounted base, maintenance, first
+ * instalment date, no extra fees — were CONFIRMED by the client 2026-09-04.
+ * They are listed in CONFIG's ASSUMPTIONS and printed by the tests. Still not
+ * cross-checked against an issued offer document; see the note in config.js.
  */
 
 const round = (n) => Math.round(n);
