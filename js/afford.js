@@ -206,14 +206,79 @@ const afford = (function () {
     S.hits = hits;
   }
 
-  /** How many units fit at a given budget. Drives the stretch nudge, so it
-   *  quotes a number rather than a vague "try increasing your budget". */
+  /** How many units fit at a given budget. Drives the unlock nudge, so it quotes
+   *  a number rather than a vague "try increasing your budget". */
   function countAt(down, quarter) {
     const seen = new Set();
     for (const c of S.combos) {
       if (passesFilters(c) && fitsBudget(c, down, quarter)) seen.add(c.unit.code);
     }
     return seen.size;
+  }
+
+  /* Round a recommendation UP to something a person would actually say out loud.
+     Up, never down, so the rounded figure still clears the threshold it was
+     derived from — and it usually clears a few more, which is why the count is
+     recomputed at the rounded value rather than at the exact one. */
+  const roundUpTo = (n, step) => Math.ceil(n / step) * step;
+
+  /**
+   * The cheapest increase that brings at least one MORE unit into reach, and how
+   * many arrive with it.
+   *
+   * This replaced a fixed "+10% and see what happens" probe, which stayed silent
+   * whenever the next unit needed 11%. The agent was then told nothing at all,
+   * which reads as "this is everything" when it is really "you were close".
+   * So the threshold is derived from the inventory instead of guessed: the
+   * smallest quarterly instalment above the current budget, and the smallest
+   * down payment above the current cash, among units that do not already fit.
+   *
+   * Two levers, because the plans are gated by both and they are not
+   * interchangeable in a sales conversation — one asks the customer for more
+   * every month for years, the other for more cash today. Whichever needs the
+   * smaller proportional increase is the one recommended.
+   *
+   * Returns null only when nothing more exists to unlock under these filters,
+   * which is the one case worth staying quiet about.
+   */
+  function nextUnlock() {
+    const have = new Set(S.hits.map((h) => h.unit.code));
+    const quarter = quarterly();
+    let needQuarter = null, needDown = null;
+
+    for (const c of S.combos) {
+      if (!passesFilters(c) || have.has(c.unit.code)) continue;
+      const q = testAmount(c);
+      // Cash is already enough; only the instalment is out of reach.
+      if (c.down <= S.down && q > quarter && (needQuarter === null || q < needQuarter)) {
+        needQuarter = q;
+      }
+      // The instalment is already affordable; only the down payment is short.
+      if (q <= quarter && c.down > S.down && (needDown === null || c.down < needDown)) {
+        needDown = c.down;
+      }
+    }
+
+    const options = [];
+    if (needQuarter !== null) {
+      const monthly = roundUpTo(needQuarter / 3, 500);
+      const n = countAt(S.down, monthly * 3) - S.hits.length;
+      if (n > 0) {
+        options.push({ kind: 'monthly', value: monthly, n,
+                       rise: (monthly - S.monthly) / (S.monthly || 1) });
+      }
+    }
+    if (needDown !== null) {
+      const cash = roundUpTo(needDown, 10000);
+      const n = countAt(cash, quarter) - S.hits.length;
+      if (n > 0) {
+        options.push({ kind: 'cash', value: cash, n,
+                       rise: (cash - S.down) / (S.down || 1) });
+      }
+    }
+    if (!options.length) return null;
+    options.sort((a, b) => a.rise - b.rise);
+    return options[0];
   }
 
   /** The combination that comes closest to fitting, measured as the worse of the
@@ -377,28 +442,34 @@ const afford = (function () {
       n: Math.min(PAGE, S.hits.length - S.shown), total: S.hits.length,
     });
 
-    /* The nudge. Only worth showing when a small stretch opens something up — a
-       line reading "+10% gets you 0 more units" is noise. */
-    const plus = countAt(S.down, quarterly() * 1.1) - S.hits.length;
-    if (plus > 0) {
-      stretch.hidden = false;
-      stretch.textContent = '';
-      stretch.appendChild(document.createTextNode(bidiSafe(
-        t(plus === 1 ? 'budget.stretchOne' : 'budget.stretch', {
-          monthly: group(S.monthly * 1.1), n: plus,
-        }) + ' ')));
-      const apply = el('button', null, t('budget.apply'));
-      apply.type = 'button';
-      apply.onclick = () => {
-        S.monthly = Math.round(S.monthly * 1.1);
-        reprint($('inMonthly'), S.monthly);
-        S.shown = PAGE;
-        draw();
-      };
-      stretch.appendChild(apply);
-    } else {
-      stretch.hidden = true;
-    }
+    renderUnlock(stretch);
+  }
+
+  /** The recommendation. Shown WHENEVER more units can be unlocked (the user's
+   *  instruction, 2026-09-05), not only when a fixed +10% probe happened to
+   *  clear a threshold. Hidden only when there is genuinely nothing left. */
+  function renderUnlock(box) {
+    const next = nextUnlock();
+    if (!next) { box.hidden = true; return; }
+
+    const monthly = next.kind === 'monthly';
+    const key = 'budget.' + (monthly ? 'unlockMonthly' : 'unlockCash')
+              + (next.n === 1 ? 'One' : '');
+
+    box.hidden = false;
+    box.textContent = '';
+    box.appendChild(document.createTextNode(bidiSafe(
+      t(key, { amount: group(next.value), n: next.n }) + ' ')));
+
+    const apply = el('button', null, t('budget.apply'));
+    apply.type = 'button';
+    apply.onclick = () => {
+      if (monthly) { S.monthly = next.value; reprint($('inMonthly'), S.monthly); }
+      else { S.down = next.value; reprint($('inDown'), S.down); }
+      S.shown = PAGE;
+      draw();
+    };
+    box.appendChild(apply);
   }
 
   /** "There is nothing available in Building O." — said whenever the chosen
@@ -608,6 +679,27 @@ const afford = (function () {
     // Reformat on the way out, so typing is never fighting a re-inserted comma.
     inDown.onblur = () => reprint(inDown, S.down);
     inMonthly.onblur = () => reprint(inMonthly, S.monthly);
+
+    /* SELECT THE WHOLE AMOUNT ON FOCUS. Reported from a phone 2026-09-05: both
+       fields were "a bit hard" to change. The field arrives holding 1,500,000
+       and focus left the caret at the end of it, so replacing the number meant
+       nine backspaces on a numeric keypad — or a long-press, "select all", then
+       type. Selecting it means one tap and type over it, which is what anyone
+       expects of a field that already has a value in it.
+       On FOCUS only, never on click: a second tap in an already-focused field
+       must still place the caret, or correcting one digit becomes impossible.
+       Deferred a frame because iOS Safari discards a selection made
+       synchronously inside the focus handler. */
+    for (const input of [inDown, inMonthly]) {
+      input.addEventListener('focus', () => {
+        requestAnimationFrame(() => {
+          try { input.setSelectionRange(0, input.value.length); } catch { /* not selectable */ }
+        });
+      });
+      /* "Done" on the keypad closes it and reformats, instead of leaving the
+         agent hunting for somewhere neutral to tap on a full screen. */
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+    }
 
     $('inBuilding').onchange = (e) => { S.building = e.target.value; S.shown = PAGE; draw(); };
     $('inType').onchange = (e) => { S.type = e.target.value; S.shown = PAGE; draw(); };

@@ -759,7 +759,14 @@ body.noscroll{overflow:hidden}
 }
 .tally .big{font-size:25px;font-weight:700;letter-spacing:-.03em;color:var(--amber-soft)}
 .tally .of{font-size:12.5px;color:var(--dim)}
-.stretch{margin:16px 0 0;font-size:12.5px;color:var(--dim);line-height:1.6}
+/* The recommendation. HIGHLIGHTED, not a muted footnote (user's instruction
+   2026-09-05): it is the one line on the screen that turns "this is what fits"
+   into "this is what a little more would buy", which is the actual sales move. */
+.stretch{
+  margin:16px 0 0;padding:12px 14px;border-radius:12px;
+  background:rgba(255,158,61,.10);border:1px solid rgba(255,158,61,.42);
+  font-size:12.5px;color:var(--ink);line-height:1.65;
+}
 .stretch button{
   background:none;border:0;padding:0;color:var(--amber-soft);
   text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:12.5px;

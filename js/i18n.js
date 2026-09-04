@@ -238,8 +238,13 @@ const STRINGS = {
     'budget.awaiting': 'Answer the question above to see what fits.',
 
     'budget.tally': 'of {available} available units fit {down} down and {monthly} a month',
-    'budget.stretch': 'Stretch to ~{monthly} a month and {n} more units come into reach.',
-    'budget.stretchOne': 'Stretch to ~{monthly} a month and one more unit comes into reach.',
+    /* The recommendation under the results. Two levers, because the plans are
+       gated by both the instalment and the down payment; whichever needs the
+       smaller proportional increase is the one offered. See nextUnlock(). */
+    'budget.unlockMonthly': 'Raise the monthly budget to {amount} and {n} more units come into reach.',
+    'budget.unlockMonthlyOne': 'Raise the monthly budget to {amount} and one more unit comes into reach.',
+    'budget.unlockCash': 'Raise the cash to {amount} and {n} more units come into reach.',
+    'budget.unlockCashOne': 'Raise the cash to {amount} and one more unit comes into reach.',
     'budget.apply': 'Apply',
     'budget.more': 'Show {n} more of {total}',
     'budget.noneAtAll': 'No available units match those filters at all.',
@@ -444,8 +449,10 @@ const STRINGS = {
     'budget.awaiting': 'أجب عن السؤال بالأعلى لعرض الوحدات المناسبة.',
 
     'budget.tally': 'من {available} وحدة متاحة تناسب {down} مقدم و{monthly} شهريًا',
-    'budget.stretch': 'بزيادة الميزانية إلى ~{monthly} شهريًا تدخل {n} وحدات إضافية في النطاق.',
-    'budget.stretchOne': 'بزيادة الميزانية إلى ~{monthly} شهريًا تدخل وحدة إضافية في النطاق.',
+    'budget.unlockMonthly': 'بزيادة الميزانية الشهرية إلى {amount} تدخل {n} وحدات إضافية في النطاق.',
+    'budget.unlockMonthlyOne': 'بزيادة الميزانية الشهرية إلى {amount} تدخل وحدة إضافية في النطاق.',
+    'budget.unlockCash': 'بزيادة المتاح نقدًا إلى {amount} تدخل {n} وحدات إضافية في النطاق.',
+    'budget.unlockCashOne': 'بزيادة المتاح نقدًا إلى {amount} تدخل وحدة إضافية في النطاق.',
     'budget.apply': 'تطبيق',
     'budget.more': 'عرض {n} أخرى من {total}',
     'budget.noneAtAll': 'لا توجد وحدات متاحة مطابقة لهذه الفلاتر.',
