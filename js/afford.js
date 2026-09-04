@@ -44,6 +44,7 @@ const afford = (function () {
   const S = {
     down: 0,
     monthly: 0,
+    building: '',
     type: '',
     floor: '',
     sort: 'area-desc',
@@ -58,10 +59,14 @@ const afford = (function () {
     available: 0,
     hits: [],
     picked: {},          // unit code -> the plan the agent tapped on that card
-    shown: 24,
+    shown: 3,
   };
 
-  const PAGE = 24;
+  /* THREE at a time (user's instruction, 2026-09-04). A budget that fits 168
+     units is a wall of cards nobody reads, and the useful ones are at the top
+     because the list is sorted. Three fills a phone screen without scrolling
+     past the answer, and "show more" is there for the rest. */
+  const PAGE = 3;
 
   /* ------------------------------------------------------------ numbers -- */
 
@@ -152,9 +157,22 @@ const afford = (function () {
    *  structurally rather than by remembering to exclude it here. */
   const testAmount = (c) => (S.strict ? c.maxInstalment : c.level);
 
-  const passesFilters = (c) =>
+  /* A unit on a floor with no wings — the ground plaza — has building === null,
+     and it must NOT vanish when a building is chosen. That plate is one
+     continuous floor numbered straight through, so it belongs to the project
+     rather than to Q, M, O or R, and the app already shows it under every
+     building (CONFIG.floors hasBuildings, the user's decision 2026-08-17). This
+     screen follows the same rule: filtering to Building Q still offers it.
+     Excluding it would make a priced, available unit unreachable through a
+     filter that looks like it only narrows the list. */
+  const matchesBuilding = (c) =>
+    !S.building || c.unit.building === S.building || c.unit.building === null;
+
+  const matchesRest = (c) =>
     (!S.type || c.unit.type === S.type) &&
     (!S.floor || c.unit.floorCode === S.floor);
+
+  const passesFilters = (c) => matchesBuilding(c) && matchesRest(c);
 
   const fitsBudget = (c, down, quarter) => c.down <= down && testAmount(c) <= quarter;
 
@@ -199,11 +217,15 @@ const afford = (function () {
   }
 
   /** The combination that comes closest to fitting, measured as the worse of the
-   *  two overshoots — so "what would it take?" is answered with a real unit. */
-  function nearestMiss() {
+   *  two overshoots — so "what would it take?" is answered with a real unit.
+   *
+   *  `pred` is which units are eligible. It is a parameter so the empty result
+   *  can ask a second, wider question: nothing in this building, so what is the
+   *  closest anywhere else? */
+  function nearestMiss(pred = passesFilters) {
     let best = null, bestScore = Infinity;
     for (const c of S.combos) {
-      if (!passesFilters(c)) continue;
+      if (!pred(c)) continue;
       const score = Math.max(c.down / (S.down || 1), testAmount(c) / (quarterly() || 1));
       if (score < bestScore) { bestScore = score; best = c; }
     }
@@ -325,10 +347,12 @@ const afford = (function () {
     if (S.strict === null) {
       hits.innerHTML = '';
       tally.hidden = stretch.hidden = more.hidden = nothing.hidden = true;
+      $('bNote').hidden = true;
       return;
     }
 
     search();
+    renderBuildingNote();
     hits.innerHTML = '';
     tally.hidden = false;
     $('tallyBig').textContent = S.hits.length;
@@ -377,9 +401,72 @@ const afford = (function () {
     }
   }
 
+  /** "There is nothing available in Building O." — said whenever the chosen
+   *  building holds no available stock of its own, whether or not the list came
+   *  back empty. It usually does NOT come back empty: the ground plaza belongs
+   *  to no building and is offered under all of them, so an agent who picked O
+   *  would otherwise see a card and reasonably assume it was in O. */
+  function renderBuildingNote() {
+    const box = $('bNote');
+    const ownStock = S.building
+      && S.combos.some((c) => c.unit.building === S.building);
+    if (!S.building || ownStock) { box.hidden = true; return; }
+
+    box.hidden = false;
+    box.textContent = t('budget.noneInBuilding', {
+      building: t('building.n', { id: S.building }),
+    }) + ' ';
+    const clear = el('button', null, t('budget.clearBuilding'));
+    clear.type = 'button';
+    clear.onclick = () => {
+      S.building = '';
+      $('inBuilding').value = '';
+      S.shown = PAGE;
+      draw();
+    };
+    box.appendChild(clear);
+  }
+
   function renderNothing(box) {
     const near = nearestMiss();
-    if (!near) { box.textContent = t('budget.noneAtAll'); return; }
+
+    /* Nothing at all under these filters — in practice, a building with no
+       available stock. Do not stop at "no matches": the agent asked about a
+       building because a customer asked about it, and they still need an
+       answer. Say the building is empty, then answer the question they were
+       really asking by looking again without it. */
+    if (!near) {
+      box.textContent = '';
+      if (S.building) {
+        const elsewhere = nearestMiss(matchesRest);
+        box.appendChild(el('p', null, t('budget.noneInBuilding', {
+          building: t('building.n', { id: S.building }),
+        })));
+        if (elsewhere) {
+          box.appendChild(el('p', 'alt', bidiSafe(t('budget.closestElsewhere', {
+            code: elsewhere.unit.code,
+            where: unitWhere(elsewhere.unit),
+            plan: td('plan', elsewhere.planLabel),
+            down: group(elsewhere.down),
+            monthly: group(Math.ceil(testAmount(elsewhere) / 3)),
+          }))));
+          const clear = el('button', null, t('budget.clearBuilding'));
+          clear.type = 'button';
+          clear.onclick = () => {
+            S.building = '';
+            $('inBuilding').value = '';
+            S.shown = PAGE;
+            draw();
+          };
+          const p = el('p');
+          p.appendChild(clear);
+          box.appendChild(p);
+        }
+      } else {
+        box.textContent = t('budget.noneAtAll');
+      }
+      return;
+    }
 
     const needMonthly = Math.ceil(testAmount(near) / 3);
     const lines = [t('budget.none', {
@@ -459,6 +546,22 @@ const afford = (function () {
       sel.appendChild(o);
     };
 
+    /* EVERY building is listed, including one with nothing available — it is
+       labelled as empty instead of being dropped. Hiding it was the first cut
+       and it is the wrong call: an agent filters by building because a customer
+       asked about that building, and a filter that silently has no Building O
+       leaves them unable to answer. Picking an empty one says so and offers the
+       closest unit elsewhere — see renderNothing(). */
+    const building = $('inBuilding');
+    building.innerHTML = '';
+    opt(building, '', t('budget.anyBuilding'));
+    const withStock = new Set(pool.map((u) => u.building).filter(Boolean));
+    for (const b of CONFIG.buildings) {
+      const name = t('building.n', { id: b.id });
+      opt(building, b.id, withStock.has(b.id) ? name : `${name} — ${t('building.none')}`);
+    }
+    building.value = S.building;
+
     const type = $('inType');
     type.innerHTML = '';
     opt(type, '', t('budget.anyType'));
@@ -475,6 +578,14 @@ const afford = (function () {
       if (present.has(f.code)) opt(floor, f.code, td('floor', f.name));
     }
     floor.value = S.floor;
+
+    /* If a chosen value no longer exists — the last unit in that building sold
+       while the panel was open — the select falls back to "any". Follow it in
+       the state, or the screen would show "Any building" while still filtering
+       to a building that has nothing, which reads as the search being broken. */
+    S.building = building.value;
+    S.type = type.value;
+    S.floor = floor.value;
 
     const sort = $('inSort');
     sort.innerHTML = '';
@@ -498,6 +609,7 @@ const afford = (function () {
     inDown.onblur = () => reprint(inDown, S.down);
     inMonthly.onblur = () => reprint(inMonthly, S.monthly);
 
+    $('inBuilding').onchange = (e) => { S.building = e.target.value; S.shown = PAGE; draw(); };
     $('inType').onchange = (e) => { S.type = e.target.value; S.shown = PAGE; draw(); };
     $('inFloor').onchange = (e) => { S.floor = e.target.value; S.shown = PAGE; draw(); };
     $('inSort').onchange = (e) => { S.sort = e.target.value; draw(); };

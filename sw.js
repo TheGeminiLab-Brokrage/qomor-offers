@@ -35,7 +35,7 @@
  * answer a request for `js/app.js?v=34`, and the app would silently lose offline
  * support while looking perfectly healthy online.
  */
-const BUILD = '36';
+const BUILD = '39';
 const CACHE = `qomor-offers-v${BUILD}`;
 
 /* Code is revalidated; artwork is not.

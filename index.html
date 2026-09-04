@@ -8,7 +8,7 @@
 <link rel="manifest" href="site.webmanifest">
 <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
 <link rel="icon" href="assets/icons/icon-192.png">
-<link rel="stylesheet" href="css/styles.css?v=36">
+<link rel="stylesheet" href="css/styles.css?v=39">
 <!-- The masterplan render is the first thing anyone sees, but its src is set by
      renderHero() — which only runs once the inventory has parsed, so the image
      did not START downloading until then and the page sat empty for the whole
@@ -106,9 +106,12 @@
         </label>
       </div>
 
+      <!-- Building, floor, type — the same order the app's own steps ask for
+           them, so the filters read in the order an agent already thinks. -->
       <div class="refine">
-        <select id="inType"></select>
+        <select id="inBuilding"></select>
         <select id="inFloor"></select>
+        <select id="inType"></select>
         <select id="inSort"></select>
       </div>
 
@@ -129,13 +132,23 @@
         </div>
       </div>
 
+      <!-- Said when the chosen building has nothing of its own available. It is
+           a note ABOVE the results rather than an empty state, because the
+           ground plaza belongs to no building and is offered under all of them
+           — so the list is NOT empty, and without this line an agent would read
+           those cards as being in the building they picked. -->
+      <p class="bnote" id="bNote" hidden></p>
+
       <div class="tally" id="tally" hidden>
         <span class="big" id="tallyBig">—</span>
         <span class="of" id="tallyOf"></span>
       </div>
-      <p class="stretch" id="stretch" hidden></p>
       <div class="hits" id="hits"></div>
       <button class="ghost more" id="btnMore" type="button" hidden></button>
+      <!-- BELOW the results, on the user's instruction 2026-09-04. It is about
+           what a bigger budget would unlock, which is only worth reading once
+           the agent has seen what the current budget already buys. -->
+      <p class="stretch" id="stretch" hidden></p>
       <div class="nothing" id="nothing" hidden></div>
       <div class="awaiting" id="awaiting" data-i18n="budget.awaiting">Answer the question above to see what fits.</div>
     </div>
@@ -331,25 +344,25 @@
 <!-- i18n first: config.js is untouched English (it is the source of truth and
      the tests assert on it), and everything drawn on screen is translated at
      render time on top of it. See the header comment in js/i18n.js. -->
-<script src="js/i18n.js?v=36"></script>
+<script src="js/i18n.js?v=39"></script>
 <!-- Arabic for the PDF, and the shaper that makes it drawable. Both are small
      and both are needed before the first export; the 376 KB Arabic FONT is the
      part that loads lazily, and only for an Arabic offer. -->
-<script src="js/arabic.js?v=36"></script>
-<script src="js/pdf-ar.js?v=36"></script>
-<script src="js/config.js?v=36"></script>
-<script src="js/plan.js?v=36"></script>
-<script src="js/sheet.js?v=36"></script>
-<script src="js/engine.js?v=36"></script>
+<script src="js/arabic.js?v=39"></script>
+<script src="js/pdf-ar.js?v=39"></script>
+<script src="js/config.js?v=39"></script>
+<script src="js/plan.js?v=39"></script>
+<script src="js/sheet.js?v=39"></script>
+<script src="js/engine.js?v=39"></script>
 <!-- Analytics. Inert until CONFIG.telemetry carries a url and key, and it can
      never break an offer — see the three rules at the top of the file. -->
-<script src="js/telemetry.js?v=36"></script>
-<script src="js/pdf.js?v=36"></script>
-<script src="js/post.js?v=36"></script>
+<script src="js/telemetry.js?v=39"></script>
+<script src="js/pdf.js?v=39"></script>
+<script src="js/post.js?v=39"></script>
 <!-- Search by budget (step 0). Loaded BEFORE app.js, which calls its
      afford.rebuild() whenever the inventory changes. -->
-<script src="js/afford.js?v=36"></script>
-<script src="js/app.js?v=36"></script>
+<script src="js/afford.js?v=39"></script>
+<script src="js/app.js?v=39"></script>
 <!-- The service worker makes the app open without a connection and makes the
      browser offer "install to home screen". It never caches the inventory —
      see the rule at the top of sw.js. Skipped on file://, where registration

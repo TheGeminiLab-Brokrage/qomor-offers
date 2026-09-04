@@ -213,6 +213,7 @@ const STRINGS = {
     /* Instalments are quarterly. A customer holds a monthly budget, so the
        screen speaks in months and states the quarterly figure everywhere. */
     'budget.quarterHint': 'Instalments are quarterly — that is {q} every 3 months.',
+    'budget.anyBuilding': 'Any building',
     'budget.anyType': 'Any type',
     'budget.anyFloor': 'Any floor',
     'budget.sortArea': 'Biggest unit first',
@@ -242,6 +243,11 @@ const STRINGS = {
     'budget.apply': 'Apply',
     'budget.more': 'Show {n} more of {total}',
     'budget.noneAtAll': 'No available units match those filters at all.',
+    /* A chosen building with nothing in it. The agent is standing in front of
+       someone who asked about that building, so answer rather than stop. */
+    'budget.noneInBuilding': 'There are no available units in {building} at the moment.',
+    'budget.closestElsewhere': 'The closest available is {code}, {where}: {down} down and ~{monthly} a month on the {plan} plan.',
+    'budget.clearBuilding': 'Show all buildings',
     'budget.none': 'Nothing fits that budget. The closest is {code}{area} on the {plan} plan: {down} down and ~{monthly} a month.',
     'budget.noneCash': 'That is {n} more cash than entered.',
     'budget.noneMonthly': 'That is {n} more a month.',
@@ -419,6 +425,7 @@ const STRINGS = {
     'budget.cashHint': 'يُدفع كمقدم عند التعاقد.',
     'budget.monthly': 'الميزانية الشهرية',
     'budget.quarterHint': 'الأقساط ربع سنوية — أي {q} كل 3 شهور.',
+    'budget.anyBuilding': 'كل المباني',
     'budget.anyType': 'كل الأنواع',
     'budget.anyFloor': 'كل الأدوار',
     'budget.sortArea': 'الأكبر مساحة أولاً',
@@ -442,6 +449,9 @@ const STRINGS = {
     'budget.apply': 'تطبيق',
     'budget.more': 'عرض {n} أخرى من {total}',
     'budget.noneAtAll': 'لا توجد وحدات متاحة مطابقة لهذه الفلاتر.',
+    'budget.noneInBuilding': 'لا توجد وحدات متاحة في {building} حاليًا.',
+    'budget.closestElsewhere': 'أقرب وحدة متاحة {code}، {where}: {down} مقدم و~{monthly} شهريًا على خطة {plan}.',
+    'budget.clearBuilding': 'عرض كل المباني',
     'budget.none': 'لا توجد وحدة تناسب هذه الميزانية. أقربها {code}{area} على خطة {plan}: {down} مقدم و~{monthly} شهريًا.',
     'budget.noneCash': 'أي بزيادة {n} عن المبلغ المدخل.',
     'budget.noneMonthly': 'أي بزيادة {n} شهريًا.',

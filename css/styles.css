@@ -759,7 +759,7 @@ body.noscroll{overflow:hidden}
 }
 .tally .big{font-size:25px;font-weight:700;letter-spacing:-.03em;color:var(--amber-soft)}
 .tally .of{font-size:12.5px;color:var(--dim)}
-.stretch{margin:0 0 14px;font-size:12.5px;color:var(--dim);line-height:1.6}
+.stretch{margin:16px 0 0;font-size:12.5px;color:var(--dim);line-height:1.6}
 .stretch button{
   background:none;border:0;padding:0;color:var(--amber-soft);
   text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:12.5px;
@@ -815,4 +815,12 @@ body.noscroll{overflow:hidden}
   .budget{grid-template-columns:1fr}
   .money input{font-size:19px}
   .refine select{flex:1;min-width:120px}
+}
+
+/* The "this building has nothing" note. Amber, above the results, because the
+   results below it are ground-plaza units that belong to no building at all. */
+.bnote{margin:16px 0 0;font-size:12.5px;color:var(--warn);line-height:1.6}
+.bnote button{
+  background:none;border:0;padding:0;color:var(--amber-soft);
+  text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:12.5px;
 }
