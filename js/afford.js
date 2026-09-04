@@ -498,6 +498,27 @@ const afford = (function () {
     box.appendChild(clear);
   }
 
+  /** "Open QSE-050" — the unit named in an empty result, made selectable.
+   *
+   *  Naming a unit the agent then has to go and find by hand is a dead end: the
+   *  screen has already worked out which unit it is and on which plan, and the
+   *  customer in the room is asking about that one. Labelled with the code, so
+   *  two of these on the same message stay unambiguous.
+   *
+   *  It opens the unit at the plan the message quoted, which is NOT one the
+   *  budget covers — that is the point, the agent is showing what it would take
+   *  — so the offer that follows is the real schedule for it. */
+  function openUnitButton(combo) {
+    const b = el('button', 'cta small', bidiSafe(t('budget.openUnit', {
+      code: combo.unit.code, plan: td('plan', combo.planLabel),
+    })));
+    b.type = 'button';
+    b.onclick = () => pick(combo.unit.code, combo.planId);
+    const p = el('p', 'act');
+    p.appendChild(b);
+    return p;
+  }
+
   function renderNothing(box) {
     const near = nearestMiss();
 
@@ -521,6 +542,7 @@ const afford = (function () {
             down: group(elsewhere.down),
             monthly: group(Math.ceil(testAmount(elsewhere) / 3)),
           }))));
+          box.appendChild(openUnitButton(elsewhere));
           const clear = el('button', null, t('budget.clearBuilding'));
           clear.type = 'button';
           clear.onclick = () => {
@@ -554,24 +576,29 @@ const afford = (function () {
        is usually not "too expensive" at all — the ordinary instalment fits and
        only the one-off milestone quarter does not, which reads as a bug unless
        the screen says so plainly. */
-    let alt = '';
+    let cheap = null;
     if (S.strict) {
-      const cheap = S.combos
+      cheap = S.combos
         .filter((c) => passesFilters(c) && c.down <= S.down && c.level <= quarterly())
-        .sort((a, b) => a.level - b.level)[0];
-      if (cheap) {
-        alt = t('budget.noneMilestone', {
-          code: cheap.unit.code,
-          plan: td('plan', cheap.planLabel),
-          monthly: group(cheap.level / 3),
-          max: group(cheap.maxInstalment),
-        });
-      }
+        .sort((a, b) => a.level - b.level)[0] || null;
     }
 
     box.textContent = '';
     box.appendChild(el('p', null, bidiSafe(lines.join(' '))));
-    if (alt) box.appendChild(el('p', 'alt', bidiSafe(alt)));
+    /* Both named units are selectable. The agent is standing in front of someone
+       asking about them, and reading a unit code they then have to hunt for in
+       the floor plan is where this screen would stop being useful. */
+    box.appendChild(openUnitButton(near));
+
+    if (cheap) {
+      box.appendChild(el('p', 'alt', bidiSafe(t('budget.noneMilestone', {
+        code: cheap.unit.code,
+        plan: td('plan', cheap.planLabel),
+        monthly: group(cheap.level / 3),
+        max: group(cheap.maxInstalment),
+      }))));
+      box.appendChild(openUnitButton(cheap));
+    }
   }
 
   /* ---------------------------------------------------------------- wiring -- */

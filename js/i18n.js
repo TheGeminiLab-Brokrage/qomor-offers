@@ -253,6 +253,11 @@ const STRINGS = {
     'budget.noneInBuilding': 'There are no available units in {building} at the moment.',
     'budget.closestElsewhere': 'The closest available is {code}, {where}: {down} down and ~{monthly} a month on the {plan} plan.',
     'budget.clearBuilding': 'Show all buildings',
+    /* Carries the plan as well as the code. An empty result can name the same
+       unit twice on two different plans — GPL-001 on 4 years and on 9 years —
+       and two buttons reading "Open GPL-001" say nothing about which schedule
+       the agent is about to land on. */
+    'budget.openUnit': 'Open {code} · {plan}',
     'budget.none': 'Nothing fits that budget. The closest is {code}{area} on the {plan} plan: {down} down and ~{monthly} a month.',
     'budget.noneCash': 'That is {n} more cash than entered.',
     'budget.noneMonthly': 'That is {n} more a month.',
@@ -459,6 +464,7 @@ const STRINGS = {
     'budget.noneInBuilding': 'لا توجد وحدات متاحة في {building} حاليًا.',
     'budget.closestElsewhere': 'أقرب وحدة متاحة {code}، {where}: {down} مقدم و~{monthly} شهريًا على خطة {plan}.',
     'budget.clearBuilding': 'عرض كل المباني',
+    'budget.openUnit': 'افتح {code} · {plan}',
     'budget.none': 'لا توجد وحدة تناسب هذه الميزانية. أقربها {code}{area} على خطة {plan}: {down} مقدم و~{monthly} شهريًا.',
     'budget.noneCash': 'أي بزيادة {n} عن المبلغ المدخل.',
     'budget.noneMonthly': 'أي بزيادة {n} شهريًا.',

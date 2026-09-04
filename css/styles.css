@@ -831,3 +831,9 @@ body.noscroll{overflow:hidden}
   background:none;border:0;padding:0;color:var(--amber-soft);
   text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:12.5px;
 }
+
+/* The unit named in an empty result is selectable, so it needs a real button
+   rather than a sentence. Inline-sized: it sits under a line of prose, not at
+   the foot of a card. */
+.nothing .act{margin:10px 0 0}
+.nothing .cta.small{display:inline-block;width:auto;padding:8px 16px;font-size:12.5px}
