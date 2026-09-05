@@ -456,10 +456,16 @@ const afford = (function () {
     const key = 'budget.' + (monthly ? 'unlockMonthly' : 'unlockCash')
               + (next.n === 1 ? 'One' : '');
 
+    /* The GAP, not the new total — what has to be ADDED to what was entered.
+       "Add 10,000 a month" is the sentence an agent says out loud; "raise it to
+       50,000" makes the customer do the subtraction. The Apply button below
+       still sets the absolute value, which is what the search needs. */
+    const gap = next.value - (monthly ? S.monthly : S.down);
+
     box.hidden = false;
     box.textContent = '';
     box.appendChild(document.createTextNode(bidiSafe(
-      t(key, { amount: group(next.value), n: next.n }) + ' ')));
+      t(key, { amount: group(gap), n: next.n }) + ' ')));
 
     const apply = el('button', null, t('budget.apply'));
     apply.type = 'button';
