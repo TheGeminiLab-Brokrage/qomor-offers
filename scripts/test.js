@@ -483,7 +483,8 @@ function buildStampCheck() {
   ok(!wrong.length,
      `every stamp matches sw.js BUILD=${build} (${wrong.join(', ') || 'all match'})`);
 
-  const version = /version: 'qomor-offers-v(\d+)'/.exec(read('js/config.js'));
+  // Prefix captured, not spelled out — same file in every app on this stack.
+  const version = /version: '[\w-]+?-v(\d+)'/.exec(read('js/config.js'));
   ok(version && version[1] === build,
      `js/config.js telemetry version is v${build}` + (version ? ` (found v${version[1]})` : ''));
 }

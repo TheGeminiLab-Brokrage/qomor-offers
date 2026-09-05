@@ -49,6 +49,9 @@ write('sw.js', sw.replace(/const BUILD = '\d+';/, `const BUILD = '${next}';`));
 write('index.html', read('index.html').replace(/\?v=\d+/g, `?v=${next}`));
 
 write('js/config.js', read('js/config.js')
-  .replace(/version: 'qomor-offers-v\d+'/, `version: 'qomor-offers-v${next}'`));
+  /* The prefix is captured rather than written out, so this file is identical in
+     every app built from this stack — qomor-offers, qomor-partners-offers and
+     whatever comes next — and porting it is a copy, not an edit. */
+  .replace(/version: '([\w-]+?)-v\d+'/, (m, prefix) => `version: '${prefix}-v${next}'`));
 
 console.log(`build ${current[1]} -> ${next}  (sw.js, index.html, js/config.js)`);
