@@ -178,6 +178,10 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
       discountPct: unit.discount || 0,
       discountAmount: round(listPrice - base),
       price: base,                                 // Final Price — the plan's base
+      /* A payment-terms discount given through js/npv.js. `price` is already
+         net of it; these say how much of the gap to listPrice it accounts for. */
+      planDiscount: unit.planDiscount || 0,
+      priceBeforePlanDiscount: unit.priceBeforePlanDiscount != null ? unit.priceBeforePlanDiscount : base,
       downPayment: down,
       downPct: plan.down,
       instalmentCount: plan.instalments,

@@ -14,7 +14,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-const src = ['js/config.js', 'js/sheet.js', 'js/engine.js']
+const src = ['js/config.js', 'js/sheet.js', 'js/engine.js', 'js/npv.js']
   .map(read)
   .join('\n')
   /* Each file ends with a CommonJS export guard. Deleting the block by regex
@@ -26,7 +26,7 @@ const src = ['js/config.js', 'js/sheet.js', 'js/engine.js']
 const G = new Function(`${src}
   return { CONFIG, ASSUMPTIONS, parseCSV, parseNumber, normalizeRows, parseUnitCode,
            mapHeaders, buildSchedule, scheduleByYear, scheduleTotal, levelRate,
-           milestonesFor, pctLabel, addMonths, fmt };`)();
+           milestonesFor, pctLabel, addMonths, fmt, NPV };`)();
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -358,6 +358,108 @@ section('duplicate and malformed rows');
   ok(warnings.some((w) => /duplicate/i.test(w)), 'duplicate reported');
   ok(warnings.some((w) => /not in the expected form/i.test(w)), 'bad code reported');
   ok(warnings.some((w) => /no usable price/i.test(w)), 'priceless row reported');
+}
+
+/* ----------------------------------------------------------- custom plans -- */
+section('custom plans (npv.js)');
+{
+  const N = G.NPV;
+  const when = new Date(2026, 8, 10);
+  const plan = (id) => G.CONFIG.plans.find((p) => p.id === id);
+  const ask = (id, down, n) => N.evaluate(plan(id), { down, instalments: n }, when);
+
+  /* THE fairness test: a customer who changes nothing earns nothing. */
+  for (const p of G.CONFIG.plans) {
+    const r = ask(p.id, p.down, p.instalments);
+    eq(r.neutral, 0, `${p.label} unchanged earns exactly 0`);
+    eq(r.ref.id, p.id, `${p.label} unchanged is measured against itself`);
+    eq(r.verdict, 'neutral', `${p.label} unchanged reads "nothing changed"`);
+  }
+
+  /* The reference is the SHORTEST standard plan his last payment fits inside. */
+  eq(ask('10y', 0.5, 36).ref.id, '9y', '10y cut to 36 instalments (month 108) → measured against 9y');
+  eq(ask('10y', 0.5, 33).ref.id, '9y', '10y cut to 33 (month 99) → still 9y, the shortest it fits inside');
+  eq(ask('10y', 0.5, 32).ref.id, '8y', '10y cut to 32 (month 96) → 8y');
+  eq(ask('6y', 0.1, 16).ref.id, '6y', '6y cut to 16 (month 48) → 6y');
+  eq(ask('6y', 0.1, 15).ref.id, '4y', '6y cut to 15 (month 45) → 4y');
+
+  /* The warning fires on exactly the hole between the 4y and 6y plan ends. */
+  const gapAt = (n) => !!ask('6y', 0.1, n).gap;
+  ok(!gapAt(15) && gapAt(16) && gapAt(23) && !gapAt(24),
+     'gap warning: off at month 45, on at 48 and 69, off at 72');
+
+  /* Direction: more down on the same plan always earns more. */
+  let prev = -Infinity, rising = true;
+  for (let d = 0.10; d <= 0.5001; d += 0.05) {
+    const r = ask('6y', d, 24);
+    if (!(r.neutral > prev)) rising = false;
+    prev = r.neutral;
+  }
+  ok(rising, '6y: every extra 5% down earns a larger discount');
+  ok(ask('8y', 0.3, 32).neutral === 0 && ask('8y', 0.3, 30).neutral > 0,
+     '8y: finishing two quarters early earns a discount');
+
+  /* An independent present value, built HERE from the plans as stated in
+     EXPECTED_MILESTONE_MONTHS rather than through npv.js or engine.js — so a
+     change to either that shifts the money is caught, not echoed. */
+  const handPV = (down, n, msMonths, msPct) => {
+    const level = (1 - down - msPct.reduce((s, p) => s + p, 0)) / n;
+    const at = (months) => {
+      const d = new Date(when.getFullYear(), when.getMonth() + months, 1);
+      d.setDate(Math.min(when.getDate(), new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+      return Math.round((d - when) / 86400000);
+    };
+    let pv = down;
+    for (let i = 1; i <= n; i++) {
+      const k = msMonths.indexOf(i * 3);
+      pv += (level + (k >= 0 ? msPct[k] : 0)) / Math.pow(1.12, at(i * 3) / 365);
+    }
+    return pv;
+  };
+  const six = EXPECTED_MILESTONE_MONTHS['6y'];
+  const hand = 1 - handPV(0.10, 24, six, [0.10]) / handPV(0.20, 24, six, [0.10]);
+  const r20 = ask('6y', 0.20, 24);
+  near(r20.neutral, hand, 1e-12, '6y + 10% down matches a hand-built present value');
+
+  /* Applying it: the maximum is rounded DOWN, the price comes off the sheet's
+     Final Price, and the schedule foots to the new price. */
+  ok(r20.max <= r20.neutral && r20.neutral - r20.max < 0.0001, 'maximum is rounded down to 0.01%');
+  const unit = { code: 'QSP-900', price: 5919056, total: 6963595, discount: 0.15, state: 'available' };
+  const cut = N.applyDiscount(unit, r20.max);
+  eq(cut.price, Math.round(unit.price * (1 - r20.max)), 'applied price = Final Price × (1 − discount)');
+  const { rows, summary } = G.buildSchedule(cut, r20.plan, when);
+  eq(rows.filter((x) => !x.maintenance).reduce((s, x) => s + x.amount, 0), cut.price,
+     'custom schedule foots exactly to the reduced price');
+  ok(rows.every((x) => x.amount > 0), 'custom schedule has no zero or negative payment');
+  eq(summary.planDiscount, r20.max, 'summary carries the plan discount');
+  eq(summary.discountAmount, unit.total - cut.price, 'saving shown = list price − new price');
+  eq(summary.planLabel, 'Custom', 'the offer names it a custom plan');
+
+  /* Limits: at least the base down payment, at most its instalments, and the
+     down payment stops one point before the instalments would be zero. */
+  const lim = N.limits(plan('10y'), 40);
+  near(lim.downMax, 0.79, 1e-12, '10y: down payment can rise to 79% (20% milestones + 1% left)');
+  near(N.limits(plan('10y'), 13).downMax, 0.89, 1e-12,
+       '10y cut to 13 quarters: the Q14 milestone falls away, so down can rise to 89%');
+  eq(ask('10y', 0.8, 40).verdict, 'invalid', 'down + milestones = 100% is refused');
+
+  /* Moving plans when the terms do not fit the one chosen. */
+  const moveTo = (from, down, n) => { const p = N.planFor(plan(from), down, n); return p ? p.id : null; };
+  eq(moveTo('6y', 0.30, 32), '8y', '6y asked for 32 instalments at 30% down → moves to 8y');
+  eq(moveTo('6y', 0.50, 32), '8y', '6y, 32 instalments at 50% down → 8y, the nearest that fits');
+  eq(moveTo('6y', 0.50, 40), '10y', '6y, 40 instalments at 50% down → 10y');
+  eq(moveTo('6y', 0.10, 32), null, '6y, 32 instalments at only 10% down → no plan fits');
+  eq(moveTo('8y', 0.20, 24), '7y', '8y at 20% down, 24 instalments → 7y (nearest), not 6y');
+  eq(moveTo('4y', 0.10, 16), '6y', '4y asked for 16 instalments → 6y');
+  eq(moveTo('4y', 0.0625, 16), null, '4y at 6.25% down, 16 instalments → nothing (6y needs 10%)');
+  eq(moveTo('8y', 0.30, 32), '8y', 'terms that already fit stay on their own plan');
+  /* And moving never moves the yardstick: the same final terms reached from
+     three starting plans price identically. */
+  const same = ['8y', '9y', '10y'].map((id) => ask(id, 0.5, 32).neutral);
+  ok(same[0] === same[1] && same[1] === same[2], '50% down / 32 instalments prices the same from 8y, 9y or 10y');
+
+  console.log(`   worked example — 6y plan, 20% down instead of 10%: maximum ${(r20.max * 100).toFixed(2)}%`
+    + ` = ${G.fmt(unit.price * r20.max)} EGP on a ${G.fmt(unit.price)} unit`);
 }
 
 /* ------------------------------------------------------------ live sheet -- */

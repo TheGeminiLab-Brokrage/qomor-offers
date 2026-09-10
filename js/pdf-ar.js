@@ -143,6 +143,8 @@ const PDF_STRINGS = {
   'unit.discount': 'خصم {pct}',
   'unit.save': 'توفّر {amount}',
   'unit.saveNote': 'خصم {pct} من السعر قبل الخصم. خطة السداد التالية محسوبة على سعرك.',
+  'unit.saveNotePlan': 'خصم {pct} من السعر قبل الخصم، وخصم إضافي {plan} مقابل شروط السداد. الخطة التالية محسوبة على سعرك.',
+  'unit.saveNotePlanOnly': 'خصم {plan} مقابل شروط السداد. الخطة التالية محسوبة على سعرك.',
 
   /* Payment plan ------------------------------------------------------------ */
   'pay.title': 'خطة {label}',
@@ -274,6 +276,8 @@ const PDF_DATA_AR = {
   plan: {
     '4 years': '4 سنوات', '6 years': '6 سنوات', '7 years': '7 سنوات',
     '8 years': '8 سنوات', '9 years': '9 سنوات', '10 years': '10 سنوات',
+    /* A plan customised through js/npv.js. Reads "خطة مخصصة" in 'pay.title'. */
+    'Custom': 'مخصصة',
   },
   /* NO currency entry, deliberately. The user's instruction on 2026-08-15 was
      "for the numbers and EGP keep those in english": every figure on the offer

@@ -45,7 +45,7 @@ const CONFIG = {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
     project: 'qomor',
-    version: 'qomor-offers-v44',  // keep in step with sw.js, so a bad build is identifiable
+    version: 'qomor-offers-v49',  // keep in step with sw.js, so a bad build is identifiable
   },
 
   /* ---------------------------------------------------------------- sheet --
@@ -255,6 +255,16 @@ const CONFIG = {
   maintenanceRate: 0.10,
   maintenanceDueMonth: 42,
   deliveryMonth: 42,
+
+  /* --------------------------------------------------- custom plans --------
+   * The "Customise plan" panel beside the plan picker — js/npv.js.
+   * `rate` is the yearly discount rate the plans are priced at.
+   * `passcodeHash` is the SHA-256 of the passcode that opens the panel; see
+   * checkCode() in npv.js for why it is a speed bump and not security. */
+  npv: {
+    rate: 0.12,
+    passcodeHash: '3b731d7620bf723f5df5cb3dc1ab0c3f452db716712cc14379a4dfd92d19182f',
+  },
 
   /* --------------------------------------------------------------- floors --
    * The client sheet's own vocabulary. `code` is the middle segment of a unit

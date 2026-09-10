@@ -17,6 +17,15 @@ const state = {
   planId: null,
   /* Plan zoom. Deliberately NOT remembered between floors — see renderPlan. */
   zoom: 1,
+  /* The custom-plan panel (js/npv.js). `custom` holds the agent's terms —
+     { baseId, down, instalments, give, applied } — and is cleared whenever the
+     unit or the base plan changes, so terms worked out for one deal can never
+     ride along onto another. `give` null means "the maximum". */
+  custom: null,
+  customOpen: false,
+  /* Whether the term is typed as YEARS or as a number of instalments. The two
+     are the same schedule; only the box changes. */
+  customUnit: 'years',
 };
 
 /* Poll while the tab is open. Cheap — the sheet is ~150 KB and gviz sends
@@ -100,10 +109,12 @@ async function refresh({ quiet } = {}) {
     const fresh = state.units.find((u) => u.code === state.unit.code);
     if (!fresh) {
       state.unit = null; state.planId = null;
+      state.custom = null; state.customOpen = false;
       $('stepPlan').hidden = true;
       note(t('err.removed'));
     } else if (fresh.state !== 'available') {
       state.unit = fresh; state.planId = null;
+      state.custom = null; state.customOpen = false;
       $('stepPlan').hidden = true;
       note(t('err.noLonger', { code: fresh.code, status: fresh.status }));
     } else {
@@ -566,6 +577,8 @@ function renderUnits() {
 function selectUnit(code) {
   const u = state.units.find((x) => x.code === code);
   if (!u || u.state !== 'available') { note(t('err.notAvailable', { code })); return; }
+  /* Custom terms belong to one unit. A different unit starts clean. */
+  if (!state.unit || state.unit.code !== u.code) { state.custom = null; state.customOpen = false; }
   state.unit = u;
   state.planId = state.planId || CONFIG.plans[0].id;
   /* An offer is now likely, and the agent is about to spend a while on the
@@ -577,6 +590,7 @@ function selectUnit(code) {
   renderUnits();
   renderUnitCard();
   renderPlans();
+  renderCustom();
   renderSchedule();
   $('stepPlan').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -657,16 +671,450 @@ function renderPlans() {
     sel.appendChild(opt);
   }
   /* Only the schedule needs redrawing — the select already shows the new
-     selection itself, so re-rendering it here would just fight the browser. */
-  sel.onchange = () => { state.planId = sel.value; renderSchedule(); };
+     selection itself, so re-rendering it here would just fight the browser.
+     Custom terms were worked out against the OLD plan, so they are dropped;
+     an open panel restarts from the new plan. */
+  sel.onchange = () => {
+    state.planId = sel.value;
+    state.custom = null;
+    renderCustom();
+    renderSchedule();
+  };
 
   box.appendChild(label);
   box.appendChild(sel);
+
+  /* The custom-plan button, and a chip that says when custom terms are on the
+     offer — the schedule below changes, and the agent must be able to see why. */
+  const btn = el('button', 'ghost npvbtn');
+  btn.id = 'npvBtn';
+  btn.type = 'button';
+  btn.onclick = () => { state.customOpen = !state.customOpen; renderCustom(); };
+  box.appendChild(btn);
+  const chip = el('span', 'npvchip');
+  chip.id = 'npvChip';
+  box.appendChild(chip);
+  syncNpvBar();
+}
+
+/* ------------------------------------------------------- custom plans -- */
+
+const basePlan = () => CONFIG.plans.find((p) => p.id === state.planId);
+
+/* Unlocked for the rest of this visit in this tab, and no longer — closing the
+   tab locks it again. The fallback flag covers a browser that refuses storage. */
+const NPV_UNLOCK = 'qomorNpvUnlocked';
+let npvUnlockedHere = false;
+function npvUnlocked() {
+  try { return npvUnlockedHere || sessionStorage.getItem(NPV_UNLOCK) === '1'; }
+  catch { return npvUnlockedHere; }
+}
+
+/** How much of the maximum the agent is giving: all of it unless they typed
+    less, and never more than the terms are worth. */
+const giveOf = (c, r) => (c.give == null ? r.max : Math.min(Math.max(c.give, 0), r.max));
+
+/**
+ * The unit and plan the OFFER uses — the one place that decides it.
+ *
+ * The standard plan and the sheet's price, unless custom terms have been
+ * applied AND still earn a discount; then the custom plan at the reduced price.
+ * The schedule, the PDF, the WhatsApp text and telemetry all read this, so they
+ * cannot disagree about which deal was sent. The broker post deliberately does
+ * not: a customer's negotiated terms are not a listing.
+ */
+function offerTerms() {
+  const base = basePlan();
+  const c = state.custom;
+  if (!base || !c || !c.applied || c.baseId !== base.id) return { unit: state.unit, plan: base, npv: null };
+  const r = NPV.evaluate(base, c);
+  if (r.verdict !== 'earn') return { unit: state.unit, plan: base, npv: null };
+  const give = giveOf(c, r);
+  return { unit: NPV.applyDiscount(state.unit, give), plan: r.plan, npv: r, give };
+}
+
+function syncNpvBar() {
+  const btn = $('npvBtn'), chip = $('npvChip');
+  if (!btn) return;
+  btn.textContent = (npvUnlocked() ? '' : '🔒 ') + t('npv.open');
+  btn.setAttribute('aria-expanded', String(state.customOpen));
+  const terms = state.unit ? offerTerms() : null;
+  chip.hidden = !(terms && terms.npv);
+  if (terms && terms.npv) chip.textContent = t('npv.chip', { pct: pctLabel(terms.give) });
+}
+
+function renderCodeForm(box) {
+  box.appendChild(el('p', 'npvsub', t('npv.codeLabel')));
+  const form = el('form', 'npvcode');
+  const input = el('input');
+  input.type = 'password';
+  input.inputMode = 'numeric';
+  input.autocomplete = 'off';
+  const go = el('button', 'cta', t('npv.codeGo'));
+  go.type = 'submit';
+  const bad = el('span', 'bad');
+  form.append(input, go, bad);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    bad.textContent = '';
+    try {
+      if (await NPV.checkCode(input.value)) {
+        npvUnlockedHere = true;
+        try { sessionStorage.setItem(NPV_UNLOCK, '1'); } catch { /* flag above covers it */ }
+        renderCustom();
+      } else {
+        bad.textContent = t('npv.codeWrong');
+        input.select();
+      }
+    } catch {
+      bad.textContent = t('npv.codeInsecure');
+    }
+  };
+  box.appendChild(form);
+  setTimeout(() => input.focus(), 0);
+}
+
+/**
+ * The panel: his down payment and instalment count in, the maximum discount
+ * out, then how much of it to give and a button to put it on the offer.
+ *
+ * The inputs are built once and never rebuilt while the agent types — update()
+ * only rewrites the text around them — so focus and the caret stay put.
+ */
+function renderCustom() {
+  const box = $('customBox');
+  box.innerHTML = '';
+  syncNpvBar();
+  if (!state.unit || !state.customOpen) { box.hidden = true; return; }
+  box.hidden = false;
+
+  const head = el('div', 'npvhead');
+  head.appendChild(el('b', null, t('npv.title')));
+  const x = el('button', 'sheet-x', '×');
+  x.type = 'button';
+  x.setAttribute('aria-label', t('npv.close'));
+  x.onclick = () => { state.customOpen = false; renderCustom(); };
+  head.appendChild(x);
+  box.appendChild(head);
+
+  if (!npvUnlocked()) { renderCodeForm(box); return; }
+
+  /* `let`: the panel can move itself to another plan — see switchBase below. */
+  let base = basePlan();
+  if (!state.custom || state.custom.baseId !== base.id) {
+    state.custom = { baseId: base.id, down: base.down, instalments: base.instalments, give: null, applied: false };
+  }
+  const c = state.custom;
+  const cur = td('currency', CONFIG.currency);
+  const price = state.unit.price;
+
+  const sub = el('p', 'npvsub', t('npv.sub', { plan: td('plan', base.label) }));
+  box.appendChild(sub);
+  /* Filled in when the panel moves to another plan by itself. */
+  const moved = el('p', 'npvnote');
+  moved.hidden = true;
+  box.appendChild(moved);
+  /* The lump sums this schedule keeps, and what a quarter costs beside them.
+     The same down payment over the same number of quarters is a DIFFERENT deal
+     with and without them — worth more to the company when the money arrives
+     earlier — so it earns a different discount. Without this line that
+     difference is invisible until the schedule below, and the discount looks
+     arbitrary. */
+  const lumps = el('p', 'npvlumps');
+  box.appendChild(lumps);
+
+  /* Read a typed amount. Same digit handling as readMoney() in js/afford.js: an
+     Arabic keyboard on a phone types ١٥٠٠٠٠٠, and a plain digit strip would
+     delete that entirely and read it as zero. Empty is NaN, not 0, so a cleared
+     field asks for a number instead of quoting a down payment of nothing. */
+  const readMoney = (s) => {
+    const cleaned = String(s)
+      .replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 0x0660)
+      .replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 0x06F0)
+      .replace(/[^\d]/g, '');
+    return cleaned ? Number(cleaned) : NaN;
+  };
+
+  /* Quarterly instalments, so four a year — read from CONFIG rather than typed
+     in, or a change of frequency would silently halve every year on screen. */
+  const perYear = 12 / CONFIG.instalmentEveryMonths;
+  const yearsOf = (n) => +(n / perYear).toFixed(2);
+  const instOf = (y) => Math.round(y * perYear);
+
+  const field = (parent, label, unitText, value, opts) => {
+    const wrap = el('label', 'npvfield');
+    const lab = el('span', 'lab', label);
+    /* A control that belongs to this field — the term's years/instalments
+       switch — sits on the label row rather than above the box. */
+    if (opts && opts.extra) lab.appendChild(opts.extra);
+    wrap.appendChild(lab);
+    const row = el('span', 'row');
+    const input = el('input');
+    input.type = (opts && opts.type) || 'number';
+    input.inputMode = input.type === 'text' ? 'numeric' : 'decimal';
+    input.autocomplete = 'off';
+    if (opts && opts.step) input.step = opts.step;
+    input.value = value;
+    row.appendChild(input);
+    /* 'npvunit', not 'unit' — .unit is already the unit-card button style. */
+    if (unitText) row.appendChild(el('span', 'npvunit', unitText));
+    wrap.appendChild(row);
+    const hint = el('span', 'hint');
+    wrap.appendChild(hint);
+    parent.appendChild(wrap);
+    return { input, hint };
+  };
+
+  /* The customer says "three million down" and "five years" — not "50.68%" and
+     "20 quarterly instalments". The panel takes what he says; the percentage and
+     the instalment count are derived and read back in the hint under each field.
+     A text box, not a number one, so thousands separators can be shown. */
+  /* The term can be entered either way. A customer says "five years"; the price
+     list says "20 instalments"; they are the same schedule. The switch changes
+     only what the box means — c.instalments is what is stored either way. */
+  const termMode = state.customUnit === 'inst' ? 'inst' : 'years';
+  const seg = el('span', 'npvseg');
+  for (const mode of ['years', 'inst']) {
+    const b = el('button', null, t(mode === 'years' ? 'npv.years' : 'npv.instCount'));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(mode === termMode));
+    b.onclick = () => { state.customUnit = mode; renderCustom(); };
+    seg.appendChild(b);
+  }
+
+  const fields = el('div', 'npvfields');
+  const down = field(fields, t('npv.down'), cur, fmt(Math.round(c.down * price)), { type: 'text' });
+  const inst = field(fields, t('npv.term'),
+    termMode === 'years' ? t('npv.yearsUnit') : t('npv.instUnit'),
+    termMode === 'years' ? yearsOf(c.instalments) : c.instalments,
+    { type: 'number', step: termMode === 'years' ? '0.25' : '1', extra: seg });
+  box.appendChild(fields);
+
+  const res = el('div', 'npvres');
+  const msg = el('p', 'npvmsg');
+  const max = el('div', 'npvmax');
+  const vs = el('p', 'npvvs');
+  const gap = el('p', 'npvgap');
+  const giveWrap = el('div', 'npvgive');
+  const give = field(giveWrap, t('npv.give'), '%', '', { type: 'number', step: '0.01' });
+  const actions = el('div', 'npvactions');
+  const apply = el('button', 'cta', t('npv.apply'));
+  apply.type = 'button';
+  const remove = el('button', 'ghost', t('npv.remove'));
+  remove.type = 'button';
+  const status = el('span', 'npvstatus');
+  actions.append(apply, remove, status);
+  res.append(msg, max, vs, gap, giveWrap, actions);
+  box.appendChild(res);
+
+  const every = CONFIG.instalmentEveryMonths;
+  const showResult = (on) => { [max, vs, giveWrap, actions].forEach((n) => { n.hidden = !on; }); };
+
+  const ladder = NPV.ladder();
+  const planName = (p) => td('plan', p.label);
+
+  /* Terms the chosen plan cannot hold move the panel to the nearest plan that
+     can (NPV.planFor). The dropdown, the heading and the schedule behind the
+     panel all follow, and a note says why — nothing changes silently. */
+  /* A share of the price, as money on this unit — every figure the agent reads
+     is in the currency the customer is talking in. */
+  const money = (frac) => fmt(Math.round(frac * price));
+
+  const switchBase = (to, why) => {
+    const from = base;
+    base = to;
+    state.planId = to.id;
+    c.baseId = to.id;
+    const sel = $('planSelect');
+    if (sel) sel.value = to.id;
+    sub.textContent = t('npv.sub', { plan: planName(to) });
+    moved.hidden = false;
+    moved.textContent = why === 'longer'
+      ? t('npv.movedLonger', { to: planName(to), from: planName(from) })
+      : t('npv.movedShorter', { to: planName(to), from: planName(from), down: money(from.down), currency: cur });
+    if (!c.applied) renderSchedule();
+  };
+
+  /* A term said in whichever unit the agent is working in, so guidance never
+     answers a question about instalments in years. */
+  const termText = (n) => (termMode === 'years'
+    ? t('npv.termYears', { y: yearsOf(n) })
+    : t('npv.termInst', { n }));
+
+  /* When an entry will not go and no plan can take it, say what WOULD make it
+     go, rather than only the range this one plan allows. */
+  const instProblem = (n, d) => {
+    const longest = ladder[ladder.length - 1];
+    const range = () => t('npv.rangeTerm', { min: termText(1), max: termText(base.instalments) });
+    if (!(Number.isInteger(n) && n >= 1)) return range();
+    if (n > longest.instalments) {
+      return t('npv.instMax', { term: termText(longest.instalments), plan: planName(longest) });
+    }
+    const need = ladder.find((p) => p.instalments >= n);
+    if (Number.isFinite(d) && d < need.down) {
+      return t('npv.needMoreDown', { term: termText(n), plan: planName(need), down: money(need.down), currency: cur });
+    }
+    return range();
+  };
+  const downProblem = (d, lim) => {
+    if (!Number.isFinite(d) || d >= lim.downMin - 1e-9) {
+      return t('npv.rangeMoney', { min: money(lim.downMin), max: money(lim.downMax), currency: cur });
+    }
+    const to = NPV.planFor(base, d, c.instalments);
+    if (to) {
+      return t('npv.downBelow', { plan: planName(base), down: money(base.down), currency: cur, to: planName(to) });
+    }
+    const lowest = ladder.reduce((a, p) => (p.down < a.down ? p : a));
+    if (d < lowest.down) return t('npv.downMinAll', { down: money(lowest.down), currency: cur });
+    const most = ladder.filter((p) => p.down <= d + 1e-9).pop();   // longest plan that amount reaches
+    return t('npv.downTooLow', { down: money(d), currency: cur, term: termText(most.instalments), plan: planName(most) });
+  };
+
+  /* Whether the last pass accepted both fields — read by the blur handlers,
+     which reprint an accepted value and leave a refused one on screen. */
+  let lastValid = false;
+
+  const update = (allowSwitch) => {
+    const amount = readMoney(down.input.value);
+    const d = Number.isFinite(amount) ? amount / price : NaN;
+    const typed = parseFloat(inst.input.value);
+    const n = !Number.isFinite(typed) ? NaN
+      : (termMode === 'years' ? instOf(typed) : Math.round(typed));
+
+    /* Move plans first, when these terms cannot be built on the chosen plan but
+       can on another. Too many instalments moves at once: the first digits of a
+       number are always smaller, so a half-typed count can never trigger it.
+       A down payment BELOW the plan's minimum waits until the agent leaves the
+       field, because "7" on the way to "70" is below every plan's minimum. */
+    if (allowSwitch && Number.isFinite(n) && n >= 1 && Number.isFinite(d)
+        && (n > base.instalments || d < base.down - 1e-9)) {
+      const to = NPV.planFor(base, d, n);
+      if (to && to.id !== base.id) switchBase(to, n > base.instalments ? 'longer' : 'shorter');
+    }
+
+    /* The term before the down payment: how many instalments there are decides
+       which milestones survive, and that decides how high the down payment can go. */
+    const instOk = Number.isFinite(n) && n >= 1 && n <= base.instalments;
+    if (instOk) c.instalments = n;
+    const lim = NPV.limits(base, c.instalments);
+    const downOk = Number.isFinite(d) && d >= lim.downMin - 1e-9 && d <= lim.downMax + 1e-9;
+    if (downOk) c.down = d;
+    lastValid = downOk && instOk;
+
+    const m = c.instalments * every;
+    down.hint.className = 'hint' + (downOk ? '' : ' bad');
+    down.hint.textContent = downOk
+      ? t('npv.downHint', { pct: pctLabel(+c.down.toFixed(4)), std: pctLabel(base.down),
+                            stdAmount: money(base.down), currency: cur })
+      : downProblem(d, lim);
+    inst.hint.className = 'hint' + (instOk ? '' : ' bad');
+    inst.hint.textContent = instOk
+      ? (termMode === 'years'
+          ? t('npv.instHint', { n: c.instalments, m, std: yearsOf(base.instalments) })
+          : t('npv.instHintCount', { y: yearsOf(c.instalments), m, std: base.instalments }))
+      : instProblem(n, d);
+    /* An entry that will not go also takes custom terms OFF the offer, so the
+       PDF can never carry numbers other than the ones on screen. */
+    if (!downOk || !instOk) {
+      /* The lump-sum line describes a schedule; there is no schedule while an
+         entry is refused, and leaving the last valid one up describes terms
+         nobody asked for. Typing "32" passes through "3", which IS valid, so
+         without this the line reads "each quarter 30%" beside the warning. */
+      lumps.hidden = true;
+      msg.hidden = true; gap.hidden = true; showResult(false);
+      if (c.applied) { c.applied = false; renderSchedule(); }
+      syncNpvBar();
+      return;
+    }
+
+    /* What this schedule IS, in one line: the lump sums it keeps and what a
+       plain quarter costs beside them. Cutting the instalments below a lump's
+       own quarter drops that lump, and this follows it. */
+    const cp = NPV.customPlan(base, c);
+    const ms = milestonesFor(cp);
+    const each = pctLabel(+levelRate(cp).toFixed(6));
+    const items = Object.keys(ms).map((q) =>
+      t('npv.lumpItem', { pct: pctLabel(ms[q]), m: Number(q) * every }));
+    lumps.hidden = false;
+    lumps.textContent = items.length
+      ? t('npv.lumps', { list: items.join(' · '), each })
+      : t('npv.lumpsNone', { each });
+
+    const r = NPV.evaluate(base, c);
+    gap.hidden = !r.gap;
+    if (r.gap) {
+      gap.textContent = t('npv.gap', { from: td('plan', r.gap.from.label), to: td('plan', r.gap.to.label) });
+    }
+
+    if (r.verdict !== 'earn') {
+      msg.hidden = false;
+      msg.textContent = r.verdict === 'neutral' ? t('npv.none')
+        : r.verdict === 'premium' ? t('npv.premium', { plan: td('plan', r.ref.label) })
+        : t('npv.invalid');
+      showResult(false);
+      if (c.applied) { c.applied = false; renderSchedule(); }
+      syncNpvBar();
+      return;
+    }
+
+    msg.hidden = true;
+    showResult(true);
+    max.innerHTML = '';
+    max.appendChild(el('span', null, t('npv.maxLabel')));
+    max.appendChild(el('b', null, bidiSafe(pctLabel(r.max))));
+    max.appendChild(el('i', null, bidiSafe(`${fmt(price * r.max)} ${cur}`)));
+    vs.textContent = t('npv.vs', { plan: td('plan', r.ref.label), rate: pctLabel(CONFIG.npv.rate) });
+
+    const g = giveOf(c, r);
+    if (document.activeElement !== give.input) give.input.value = (g * 100).toFixed(2);
+    give.hint.textContent = t('npv.keeps', {
+      pct: pctLabel(+(r.max - g).toFixed(6)), amount: fmt(price * (r.max - g)), currency: cur,
+      price: fmt(Math.round(price * (1 - g))),
+    });
+
+    apply.hidden = c.applied;
+    remove.hidden = !c.applied;
+    status.textContent = c.applied ? t('npv.applied', { pct: pctLabel(g) }) : '';
+    if (c.applied) renderSchedule();
+    syncNpvBar();
+  };
+
+  /* A count that outgrows the plan moves it straight away; a down payment below
+     the plan's minimum waits for the agent to leave the field. See update(). */
+  down.input.oninput = () => update(false);
+  inst.input.oninput = () => update(true);
+  /* On leaving a field, print back what is actually in use — the amount with its
+     separators, the term rounded to a whole quarter — but only if it was
+     accepted, so a refused entry stays on screen beside the reason it was. */
+  down.input.onchange = () => { update(true); if (lastValid) down.input.value = money(c.down); };
+  inst.input.onchange = () => {
+    update(true);
+    if (lastValid) inst.input.value = termMode === 'years' ? yearsOf(c.instalments) : c.instalments;
+  };
+  give.input.oninput = () => {
+    const v = parseFloat(give.input.value);
+    if (Number.isFinite(v) && v >= 0) c.give = v / 100;
+    update();
+  };
+  give.input.onchange = () => {
+    const r = NPV.evaluate(base, c);
+    if (r.verdict === 'earn') {
+      c.give = giveOf(c, r);
+      give.input.value = (c.give * 100).toFixed(2);
+    }
+    update();
+  };
+  apply.onclick = () => { c.applied = true; update(); };
+  remove.onclick = () => { c.applied = false; update(); renderSchedule(); };
+
+  update();
 }
 
 function renderSchedule() {
-  const plan = CONFIG.plans.find((p) => p.id === state.planId);
-  const { rows, summary } = buildSchedule(state.unit, plan, new Date());
+  /* offerTerms(), not the picker: with custom terms applied, the schedule shows
+     the plan and the price the offer will actually carry. */
+  const { unit, plan } = offerTerms();
+  const { rows, summary } = buildSchedule(unit, plan, new Date());
   const box = $('schedule');
   box.innerHTML = '';
 
@@ -688,12 +1136,17 @@ function renderSchedule() {
 
   /* The saving, stated once, plainly, at the point the customer is deciding.
      Both prices are shown so the figure can be checked rather than trusted. */
-  if (summary.discountPct) {
+  if (summary.discountPct || summary.planDiscount) {
     const save = el('div', 'saving');
     save.appendChild(el('b', null,
       t('save.headline', { amount: fmt(summary.discountAmount), currency: cur })));
-    save.appendChild(el('span', null, t('save.detail', {
+    /* With custom terms applied the saving has two sources, and the line says
+       so — the sheet's per-unit discount and the one earned by the terms. */
+    const key = !summary.planDiscount ? 'save.detail'
+      : summary.discountPct ? 'save.detailPlan' : 'save.detailPlanOnly';
+    save.appendChild(el('span', null, t(key, {
       pct: pctLabel(summary.discountPct),
+      plan: pctLabel(summary.planDiscount),
       list: fmt(summary.listPrice),
       price: fmt(summary.price),
       currency: cur,
@@ -782,8 +1235,9 @@ function renderSchedule() {
 $('btnOffer').onclick = async () => {
   const btn = $('btnOffer'), note = $('offerNote');
   if (!state.unit || !state.planId) return;
-  const plan = CONFIG.plans.find((p) => p.id === state.planId);
-  const unit = state.unit;
+  /* The offer carries whatever offerTerms() says — the custom plan at its
+     reduced price if one is applied, otherwise the standard plan. */
+  const { unit, plan } = offerTerms();
 
   /* On a phone the share sheet carries the PDF itself straight into WhatsApp,
      so nothing else is needed. On desktop there is no way to attach a file to a
@@ -922,7 +1376,7 @@ function renderAll() {
   renderBuildings();
   afford.relang();
   if (state.floorCode) { renderFloors(); renderUnits(); }
-  if (state.unit) { renderUnitCard(); renderPlans(); renderSchedule(); }
+  if (state.unit) { renderUnitCard(); renderPlans(); renderCustom(); renderSchedule(); }
 }
 
 applyLang();

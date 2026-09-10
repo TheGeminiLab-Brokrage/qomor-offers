@@ -1660,17 +1660,27 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
   doc.roundedRect(panelX, py2 - 14, panelW, panelH, 2, 2, 'F');
   setFill(doc, GOLD);
   doc.rect(RTL ? panelX + panelW - 1.4 : panelX, py2 - 14, 1.4, panelH, 'F');
-  caps(doc, unit.discount ? S('unit.yourPrice', null, 'Your price') : S('unit.price', null, 'Price'),
+  /* A payment-terms discount (js/npv.js) comes off the sheet's Final Price, on
+     top of the per-unit discount. The panel still shows ONE discount line — list
+     price, total discount, your price, all footing — and the note under it says
+     how that splits. The combined rate is printed rather than "15% + 3.69%":
+     one percentage is one atom, which keeps the Arabic page's number order safe. */
+  const planDisc = unit.planDiscount || 0;
+  const anyDisc = !!(unit.discount || planDisc);
+  caps(doc, anyDisc ? S('unit.yourPrice', null, 'Your price') : S('unit.price', null, 'Price'),
        panelX + 10, py2 + 1, { size: 10.5, colour: GOLD, track: 0.9, x0: panelX, x1: panelX + panelW - 10 });
   doc.setFont(SANS, 'bold').setFontSize(30);
   setText(doc, PAPER);
   tStart(doc, money(unit.price), panelX + 10, py2 + 19, panelX, panelX + panelW - 10);
 
-  if (unit.discount) {
+  if (anyDisc) {
+    const discPct = planDisc
+      ? `${+((1 - unit.price / unit.total) * 100).toFixed(2)}%`
+      : pctLabel(unit.discount);
     const listK = column(M, 70), discK = column(M + 72, 70);
     stat(doc, S('unit.listPrice', null, 'List price'), money(unit.total),
          listK.x, py2, 19, INK, [listK.x, listK.x + listK.w]);
-    stat(doc, S('unit.discount', { pct: pctLabel(unit.discount) }, `Discount ${pctLabel(unit.discount)}`),
+    stat(doc, S('unit.discount', { pct: discPct }, `Discount ${discPct}`),
          `- ${money(unit.total - unit.price)}`, discK.x, py2, 19, INK, [discK.x, discK.x + discK.w]);
 
     py2 += 62;
@@ -1684,9 +1694,15 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date(), langu
                   `You save ${money(unit.total - unit.price)}`), M + 8, py2 + 3, M + 8, PW - M - 8);
     doc.setFont(SANS, 'normal').setFontSize(11.5);
     setText(doc, MUTED);
-    tStart(doc, S('unit.saveNote', { pct: pctLabel(unit.discount) },
-                  `${pctLabel(unit.discount)} off the list price. The payment plan overleaf is calculated on your price.`),
-           M + 8, py2 + 12, M + 8, PW - M - 8);
+    const saveNote = !planDisc
+      ? S('unit.saveNote', { pct: pctLabel(unit.discount) },
+          `${pctLabel(unit.discount)} off the list price. The payment plan overleaf is calculated on your price.`)
+      : unit.discount
+        ? S('unit.saveNotePlan', { pct: pctLabel(unit.discount), plan: pctLabel(planDisc) },
+            `${pctLabel(unit.discount)} off the list price, plus ${pctLabel(planDisc)} for your payment terms. The plan overleaf is calculated on your price.`)
+        : S('unit.saveNotePlanOnly', { plan: pctLabel(planDisc) },
+            `${pctLabel(planDisc)} off for your payment terms. The plan overleaf is calculated on your price.`);
+    tStart(doc, saveNote, M + 8, py2 + 12, M + 8, PW - M - 8);
   }
 
   /* ---------- 11. payment plan ---------- */
@@ -2046,9 +2062,15 @@ function offerShareText(unit, plan, contractDate = new Date()) {
     `Area ${unit.area} m2${unit.outdoor ? ` + ${unit.outdoor} m2 outdoor` : ''}`,
     '',
   ];
+  /* A payment-terms discount (js/npv.js) is its own line, so the sheet's
+     per-unit saving is still quoted against the sheet's own Final Price. */
+  const beforePlan = unit.priceBeforePlanDiscount != null ? unit.priceBeforePlanDiscount : unit.price;
+  if (unit.discount || unit.planDiscount) out.push(`List price ${money(unit.total)}`);
   if (unit.discount) {
-    out.push(`List price ${money(unit.total)}`);
-    out.push(`Discount ${pctLabel(unit.discount)} - you save ${money(unit.total - unit.price)}`);
+    out.push(`Discount ${pctLabel(unit.discount)} - you save ${money(unit.total - beforePlan)}`);
+  }
+  if (unit.planDiscount) {
+    out.push(`Payment-terms discount ${pctLabel(unit.planDiscount)} - you save ${money(beforePlan - unit.price)}`);
   }
   out.push(`*Price ${money(unit.price)}*`, '');
   out.push(`${summary.planLabel} plan`);
@@ -2057,7 +2079,9 @@ function offerShareText(unit, plan, contractDate = new Date()) {
   out.push(`Maintenance ${pctLabel(CONFIG.maintenanceRate)} - ${money(summary.maintenance)}`);
   out.push(`Delivery ${fmtDate(summary.deliveryDate)}`);
   if (CONFIG.mapsUrl) out.push('', `Location: ${CONFIG.mapsUrl}`);
-  if (CONFIG.shareBaseUrl) {
+  /* No deep link for a custom plan: the link reopens the STANDARD plan at the
+     sheet's price, which would contradict the offer it travels with. */
+  if (CONFIG.shareBaseUrl && !plan.custom) {
     out.push('', `${CONFIG.shareBaseUrl}#${unit.code}/${plan.id}`);
   }
   return out.join('\n');
