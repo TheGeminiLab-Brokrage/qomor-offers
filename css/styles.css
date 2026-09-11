@@ -265,6 +265,12 @@ main{padding:var(--page-pad);max-width:var(--page-max);margin:0 auto}
 .npvfield .hint{display:block;margin-top:6px;font-size:11.5px;color:var(--dim);line-height:1.5}
 .npvfield .hint.bad{color:var(--warn)}
 .npvres{margin-top:16px;padding-top:14px;border-top:1px solid var(--edge)}
+/* The concession, stated in money and years. */
+.npvchanges{margin:0 0 14px;padding:12px 14px;border-radius:10px;background:var(--glass);border:1px solid var(--edge)}
+.npvchanges b{display:block;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.npvchg{display:flex;justify-content:space-between;gap:14px;font-size:12.5px;line-height:1.75}
+.npvchg .k{color:var(--dim)}
+.npvchg .v{color:var(--ink);font-weight:600;text-align:end}
 .npvmax span{display:block;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
 .npvmax b{display:block;font-size:26px;font-weight:700;color:#7CE8B4;margin-top:2px}
 .npvmax i{font-style:normal;font-size:13px;color:var(--dim)}

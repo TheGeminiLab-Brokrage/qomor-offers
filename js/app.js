@@ -846,6 +846,10 @@ function renderCustom() {
 
   /* Quarterly instalments, so four a year — read from CONFIG rather than typed
      in, or a change of frequency would silently halve every year on screen. */
+  /* Rates are read out to customers, so they print to two decimals. The
+     schedule table underneath still carries the exact per-row percentages,
+     which is where anything that has to foot is checked. */
+  const pct2 = (x) => pctLabel(Math.round(x * 10000) / 10000);
   const perYear = 12 / CONFIG.instalmentEveryMonths;
   const yearsOf = (n) => +(n / perYear).toFixed(2);
   const instOf = (y) => Math.round(y * perYear);
@@ -900,6 +904,11 @@ function renderCustom() {
   box.appendChild(fields);
 
   const res = el('div', 'npvres');
+  /* What he is OFFERING, in the two things a customer actually says — money
+     and years — and what those two do to the money coming in. This replaced a
+     row of percentages and a line naming the discount rate: an agent reading
+     it out to a customer needs the concession, not the method. */
+  const changes = el('div', 'npvchanges');
   const msg = el('p', 'npvmsg');
   const max = el('div', 'npvmax');
   const vs = el('p', 'npvvs');
@@ -913,7 +922,7 @@ function renderCustom() {
   remove.type = 'button';
   const status = el('span', 'npvstatus');
   actions.append(apply, remove, status);
-  res.append(msg, max, vs, gap, giveWrap, actions);
+  res.append(changes, msg, max, vs, gap, giveWrap, actions);
   box.appendChild(res);
 
   const every = CONFIG.instalmentEveryMonths;
@@ -1026,17 +1035,15 @@ function renderCustom() {
     if (downOk) { c.down = d; c.downMoney = Math.round(amount); }
     lastValid = downOk && instOk;
 
-    const m = c.instalments * every;
     down.hint.className = 'hint' + (downOk ? '' : ' bad');
     down.hint.textContent = downOk
-      ? t('npv.downHint', { pct: pctLabel(+c.down.toFixed(4)), std: pctLabel(base.down),
-                            stdAmount: money(base.down), currency: cur })
+      ? t('npv.downHint', { stdAmount: money(base.down), currency: cur })
       : downProblem(d0, lim, bounds);
     inst.hint.className = 'hint' + (instOk ? '' : ' bad');
     inst.hint.textContent = instOk
       ? (termMode === 'years'
-          ? t('npv.instHint', { n: c.instalments, m, std: yearsOf(base.instalments) })
-          : t('npv.instHintCount', { y: yearsOf(c.instalments), m, std: base.instalments }))
+          ? t('npv.instHint', { n: c.instalments, std: yearsOf(base.instalments) })
+          : t('npv.instHintCount', { y: yearsOf(c.instalments), std: base.instalments }))
       : instProblem(n, d0);
     /* An entry that will not go also takes custom terms OFF the offer, so the
        PDF can never carry numbers other than the ones on screen. */
@@ -1045,7 +1052,7 @@ function renderCustom() {
          entry is refused, and leaving the last valid one up describes terms
          nobody asked for. Typing "32" passes through "3", which IS valid, so
          without this the line reads "each quarter 30%" beside the warning. */
-      lumps.hidden = true;
+      lumps.hidden = true; changes.hidden = true;
       msg.hidden = true; gap.hidden = true; showResult(false);
       if (c.applied) { c.applied = false; renderSchedule(); }
       syncNpvBar();
@@ -1057,13 +1064,43 @@ function renderCustom() {
        own quarter drops that lump, and this follows it. */
     const cp = NPV.customPlan(base, c);
     const ms = milestonesFor(cp);
-    const each = pctLabel(+levelRate(cp).toFixed(6));
+    const each = pct2(levelRate(cp));
     const items = Object.keys(ms).map((q) =>
-      t('npv.lumpItem', { pct: pctLabel(ms[q]), m: Number(q) * every }));
+      t('npv.lumpItem', { pct: pct2(ms[q]), m: Number(q) * every }));
     lumps.hidden = false;
     lumps.textContent = items.length
       ? t('npv.lumps', { list: items.join(' · '), each })
       : t('npv.lumpsNone', { each });
+
+    /* The concession, in plain terms. `base` is whatever plan the panel is
+       standing on, so "standard" always means the plan being improved on. */
+    const stdDown = Math.round(base.down * price);
+    const extraDown = c.downMoney - stdDown;
+    const shorterBy = +(yearsOf(base.instalments) - yearsOf(c.instalments)).toFixed(2);
+    const nowQ = levelRate(cp), wasQ = levelRate(base);
+    const pair = (now, was) => t('npv.ratePair', {
+      now: pct2(now), was: pct2(was), delta: pct2(now - was),
+    });
+    changes.hidden = false;
+    changes.innerHTML = '';
+    changes.appendChild(el('b', null, t('npv.changes')));
+    const chg = (label, value) => {
+      const row = el('div', 'npvchg');
+      row.appendChild(el('span', 'k', label));
+      row.appendChild(el('span', 'v', value));
+      changes.appendChild(row);
+    };
+    chg(t('npv.chgDown'), extraDown > 0
+      ? t('npv.moreMoney', { amount: fmt(extraDown), currency: cur })
+      : t('npv.sameAsStd'));
+    chg(t('npv.chgTerm'), shorterBy > 0
+      ? t('npv.shorterBy', { y: shorterBy })
+      : t('npv.sameAsStd'));
+    /* What the company collects, per instalment and per year. Both, because
+       the client's own plan tables are quoted per quarter and the schedule
+       prints a yearly column. */
+    chg(t('npv.chgQuarter'), pair(nowQ, wasQ));
+    chg(t('npv.chgYear'), pair(nowQ * perYear, wasQ * perYear));
 
     const r = NPV.evaluate(base, c);
     gap.hidden = !r.gap;
@@ -1088,7 +1125,10 @@ function renderCustom() {
     max.appendChild(el('span', null, t('npv.maxLabel')));
     max.appendChild(el('b', null, bidiSafe(pctLabel(r.max))));
     max.appendChild(el('i', null, bidiSafe(`${fmt(price * r.max)} ${cur}`)));
-    vs.textContent = t('npv.vs', { plan: td('plan', r.ref.label), rate: pctLabel(CONFIG.npv.rate) });
+    /* Names what it was measured against and stops there. The rate it was
+       measured AT used to be printed here and was taken off on 2026-09-11:
+       it is the company's method, not the customer's concession. */
+    vs.textContent = t('npv.vs', { plan: td('plan', r.ref.label) });
 
     const g = giveOf(c, r);
     if (document.activeElement !== give.input) give.input.value = (g * 100).toFixed(2);
