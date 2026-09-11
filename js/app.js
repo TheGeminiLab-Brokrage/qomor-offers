@@ -799,14 +799,23 @@ function renderCustom() {
 
   if (!npvUnlocked()) { renderCodeForm(box); return; }
 
+  /* Declared BEFORE the state below, which reads it. Left where it was, this
+     was a temporal dead zone — "Cannot access price before initialization" —
+     and the test suite could not see it, because scripts/test.js never loads
+     this file. The browser found it on the first click. */
+  const price = state.unit.price;
+  const cur = td('currency', CONFIG.currency);
+
   /* `let`: the panel can move itself to another plan — see switchBase below. */
   let base = basePlan();
   if (!state.custom || state.custom.baseId !== base.id) {
-    state.custom = { baseId: base.id, down: base.down, instalments: base.instalments, give: null, applied: false };
+    /* `downMoney` is what the agent typed and what the customer hands over;
+       `down` is the share of the DISCOUNTED price that produces it. The money is
+       the input and the fraction is derived, never the other way round. */
+    state.custom = { baseId: base.id, down: base.down, downMoney: Math.round(base.down * price),
+                     instalments: base.instalments, give: null, applied: false };
   }
   const c = state.custom;
-  const cur = td('currency', CONFIG.currency);
-  const price = state.unit.price;
 
   const sub = el('p', 'npvsub', t('npv.sub', { plan: td('plan', base.label) }));
   box.appendChild(sub);
@@ -883,7 +892,7 @@ function renderCustom() {
   }
 
   const fields = el('div', 'npvfields');
-  const down = field(fields, t('npv.down'), cur, fmt(Math.round(c.down * price)), { type: 'text' });
+  const down = field(fields, t('npv.down'), cur, fmt(c.downMoney), { type: 'text' });
   const inst = field(fields, t('npv.term'),
     termMode === 'years' ? t('npv.yearsUnit') : t('npv.instUnit'),
     termMode === 'years' ? yearsOf(c.instalments) : c.instalments,
@@ -956,9 +965,10 @@ function renderCustom() {
     }
     return range();
   };
-  const downProblem = (d, lim) => {
+  const moneyOf = (amount) => fmt(Math.round(amount));
+  const downProblem = (d, lim, bounds) => {
     if (!Number.isFinite(d) || d >= lim.downMin - 1e-9) {
-      return t('npv.rangeMoney', { min: money(lim.downMin), max: money(lim.downMax), currency: cur });
+      return t('npv.rangeMoney', { min: moneyOf(bounds.min), max: moneyOf(bounds.max), currency: cur });
     }
     const to = NPV.planFor(base, d, c.instalments);
     if (to) {
@@ -976,7 +986,12 @@ function renderCustom() {
 
   const update = (allowSwitch) => {
     const amount = readMoney(down.input.value);
-    const d = Number.isFinite(amount) ? amount / price : NaN;
+    /* The share of the SHEET price. This — not the solved fraction below —
+       is what chooses a plan and drives every "the 8 years plan starts at X"
+       message, because that is the basis the plan table quotes its minimums
+       on. A customer reaching for the 8 years plan needs 30% of the sheet
+       price in his hand, whatever discount he goes on to earn. */
+    const d0 = Number.isFinite(amount) ? amount / price : NaN;
     const typed = parseFloat(inst.input.value);
     const n = !Number.isFinite(typed) ? NaN
       : (termMode === 'years' ? instOf(typed) : Math.round(typed));
@@ -986,9 +1001,9 @@ function renderCustom() {
        number are always smaller, so a half-typed count can never trigger it.
        A down payment BELOW the plan's minimum waits until the agent leaves the
        field, because "7" on the way to "70" is below every plan's minimum. */
-    if (allowSwitch && Number.isFinite(n) && n >= 1 && Number.isFinite(d)
-        && (n > base.instalments || d < base.down - 1e-9)) {
-      const to = NPV.planFor(base, d, n);
+    if (allowSwitch && Number.isFinite(n) && n >= 1 && Number.isFinite(d0)
+        && (n > base.instalments || d0 < base.down - 1e-9)) {
+      const to = NPV.planFor(base, d0, n);
       if (to && to.id !== base.id) switchBase(to, n > base.instalments ? 'longer' : 'shorter');
     }
 
@@ -996,9 +1011,19 @@ function renderCustom() {
        which milestones survive, and that decides how high the down payment can go. */
     const instOk = Number.isFinite(n) && n >= 1 && n <= base.instalments;
     if (instOk) c.instalments = n;
+    /* Now solve for the share that actually hands over the typed amount. It
+       is always at or above d0, because the discount only ever lowers the
+       price that share is taken of. */
+    const d = NPV.downForMoney(base, c.instalments, price, amount, c.give);
     const lim = NPV.limits(base, c.instalments);
-    const downOk = Number.isFinite(d) && d >= lim.downMin - 1e-9 && d <= lim.downMax + 1e-9;
-    if (downOk) c.down = d;
+    const bounds = NPV.downMoneyRange(base, c.instalments, price, c.give);
+    /* Judged as MONEY against the money that can actually be handed over.
+       Doing it in fractions was the bug: the fraction is of a price the
+       discount has already moved, so a cheque inside the quoted range came
+       back refused. A pound of slack each way absorbs the rounding. */
+    const downOk = Number.isFinite(amount) && Number.isFinite(d)
+      && amount >= bounds.min - 1 && amount <= bounds.max + 1;
+    if (downOk) { c.down = d; c.downMoney = Math.round(amount); }
     lastValid = downOk && instOk;
 
     const m = c.instalments * every;
@@ -1006,13 +1031,13 @@ function renderCustom() {
     down.hint.textContent = downOk
       ? t('npv.downHint', { pct: pctLabel(+c.down.toFixed(4)), std: pctLabel(base.down),
                             stdAmount: money(base.down), currency: cur })
-      : downProblem(d, lim);
+      : downProblem(d0, lim, bounds);
     inst.hint.className = 'hint' + (instOk ? '' : ' bad');
     inst.hint.textContent = instOk
       ? (termMode === 'years'
           ? t('npv.instHint', { n: c.instalments, m, std: yearsOf(base.instalments) })
           : t('npv.instHintCount', { y: yearsOf(c.instalments), m, std: base.instalments }))
-      : instProblem(n, d);
+      : instProblem(n, d0);
     /* An entry that will not go also takes custom terms OFF the offer, so the
        PDF can never carry numbers other than the ones on screen. */
     if (!downOk || !instOk) {
@@ -1086,7 +1111,7 @@ function renderCustom() {
   /* On leaving a field, print back what is actually in use — the amount with its
      separators, the term rounded to a whole quarter — but only if it was
      accepted, so a refused entry stays on screen beside the reason it was. */
-  down.input.onchange = () => { update(true); if (lastValid) down.input.value = money(c.down); };
+  down.input.onchange = () => { update(true); if (lastValid) down.input.value = fmt(c.downMoney); };
   inst.input.onchange = () => {
     update(true);
     if (lastValid) inst.input.value = termMode === 'years' ? yearsOf(c.instalments) : c.instalments;

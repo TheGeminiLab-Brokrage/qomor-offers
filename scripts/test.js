@@ -380,13 +380,23 @@ section('custom plans (npv.js)');
   eq(ask('10y', 0.5, 36).ref.id, '9y', '10y cut to 36 instalments (month 108) → measured against 9y');
   eq(ask('10y', 0.5, 33).ref.id, '9y', '10y cut to 33 (month 99) → still 9y, the shortest it fits inside');
   eq(ask('10y', 0.5, 32).ref.id, '8y', '10y cut to 32 (month 96) → 8y');
-  eq(ask('6y', 0.1, 16).ref.id, '6y', '6y cut to 16 (month 48) → 6y');
+  /* RULED 2026-09-11: a plan is anchored at the term it is NAMED for. The 4
+     years plan's own instalments stop in month 45, but it is sold as 4 years,
+     so a plain 4-year ask (16 quarters, month 48) is measured against it
+     rather than falling through to the much softer 6 years plan. */
+  eq(ask('6y', 0.1, 16).ref.id, '4y', '6y cut to 16 (month 48, a plain 4 years) → 4y');
+  eq(ask('6y', 0.1, 17).ref.id, '6y', '6y cut to 17 (month 51) → 6y, now past the 4 years plan');
   eq(ask('6y', 0.1, 15).ref.id, '4y', '6y cut to 15 (month 45) → 4y');
+  eq(N.anchorMonth(plan('4y')), 48, 'the 4 years plan is anchored at 48 months, not its 45');
+  for (const id of ['6y', '7y', '8y', '9y', '10y']) {
+    eq(N.anchorMonth(plan(id)), N.lastMonth(plan(id)),
+       `${id}: name and last payment already agree, so the anchor is unchanged`);
+  }
 
   /* The warning fires on exactly the hole between the 4y and 6y plan ends. */
   const gapAt = (n) => !!ask('6y', 0.1, n).gap;
-  ok(!gapAt(15) && gapAt(16) && gapAt(23) && !gapAt(24),
-     'gap warning: off at month 45, on at 48 and 69, off at 72');
+  ok(!gapAt(15) && !gapAt(16) && gapAt(17) && gapAt(23) && !gapAt(24),
+     'gap warning: off at months 45 and 48, on at 51 and 69, off at 72');
 
   /* Direction: more down on the same plan always earns more. */
   let prev = -Infinity, rising = true;
@@ -434,6 +444,73 @@ section('custom plans (npv.js)');
   eq(summary.planDiscount, r20.max, 'summary carries the plan discount');
   eq(summary.discountAmount, unit.total - cut.price, 'saving shown = list price − new price');
   eq(summary.planLabel, 'Custom', 'the offer names it a custom plan');
+
+  /* MAINTENANCE IS NOT TOUCHED BY A PAYMENT-TERMS DISCOUNT — ruled 2026-09-11.
+     Checked against 10% of the unit's own Final Price, taken from the unit
+     BEFORE applyDiscount ran, rather than from the field applyDiscount wrote.
+     A test that read priceBeforePlanDiscount would be reading the thing it is
+     supposed to be checking. */
+  eq(summary.maintenance, Math.round(unit.price * G.CONFIG.maintenanceRate),
+     'maintenance stays 10% of the price BEFORE the payment-terms discount');
+  ok(summary.maintenance > Math.round(cut.price * G.CONFIG.maintenanceRate),
+     'and is therefore MORE than 10% of the reduced price');
+  eq(summary.totalPayable, cut.price + summary.maintenance,
+     'total payable = reduced price + undiscounted maintenance');
+  eq(G.scheduleTotal(rows), summary.totalPayable, 'the rows foot to that total');
+
+  /* The percentage column has to add up to the total printed under it, so the
+     maintenance row's share is derived from its amount, not restated as 10%. */
+  const maintRow = rows.find((x) => x.maintenance);
+  near(maintRow.pctOfBase, summary.maintenance / cut.price, 1e-12,
+       'the maintenance row prints its true share of what the customer pays');
+  near(rows.reduce((t, x) => t + x.pctOfBase, 0), summary.totalPayable / cut.price, 1e-9,
+       'every row percentage sums to the total percentage');
+
+  /* And the regression that matters more: an ORDINARY offer must be unchanged. */
+  {
+    const plain = G.buildSchedule(unit, plan('8y'), when);
+    eq(plain.summary.maintenance, Math.round(unit.price * G.CONFIG.maintenanceRate),
+       'no custom terms: maintenance is unchanged');
+    eq(plain.rows.find((x) => x.maintenance).pctOfBase, G.CONFIG.maintenanceRate,
+       'no custom terms: the maintenance row still prints exactly the rate');
+  }
+
+  /* THE TYPED DOWN PAYMENT IS WHAT THE CUSTOMER PAYS. Reported 2026-09-11:
+     500,000 typed, 451,400 printed, because the share was taken of the sheet
+     price and then applied to the discounted one. Checked by building the
+     real schedule and reading the down payment row back, not by re-running
+     the solver's own arithmetic. */
+  for (const [id, n, want] of [['4y', 15, 500000], ['6y', 24, 1200000],
+                               ['8y', 30, 2500000], ['10y', 36, 3000000]]) {
+    for (const give of [null, 0.005]) {
+      const b = plan(id);
+      const f = N.downForMoney(b, n, unit.price, want, give, when);
+      const r2 = N.evaluate(b, { down: f, instalments: n }, when);
+      const g2 = give == null ? r2.max : Math.min(give, r2.max);
+      const sched = G.buildSchedule(N.applyDiscount(unit, g2), r2.plan, when);
+      ok(Math.abs(sched.summary.downPayment - want) <= 1,
+         `${id}/${n} giving ${give == null ? 'the maximum' : '0.50%'}: typed `
+         + `${G.fmt(want)} and the schedule pays ${G.fmt(sched.summary.downPayment)}`);
+    }
+  }
+
+  /* An amount that cannot be reached must be REFUSED, not silently turned
+     into a different one. Raising the down payment lowers the price it is a
+     share of, so beyond a point more pounds simply cannot be handed over. */
+  {
+    const b = plan('10y');
+    const range = N.downMoneyRange(b, 36, unit.price, null, when);
+    ok(range.max < N.limits(b, 36).downMax * unit.price,
+       'the biggest cheque accepted is below the sheet-price ceiling, because the price moves');
+    const tooMuch = Math.round(range.max) + 50000;
+    const f = N.downForMoney(b, 36, unit.price, tooMuch, null, when);
+    ok(!(f <= N.limits(b, 36).downMax + 1e-9),
+       `${G.fmt(tooMuch)} down over 36 quarters is out of range and is refused`);
+    const okAmount = Math.round(range.max) - 1000;
+    const f2 = N.downForMoney(b, 36, unit.price, okAmount, null, when);
+    ok(f2 <= N.limits(b, 36).downMax + 1e-9,
+       `${G.fmt(okAmount)}, just inside the quoted ceiling, is accepted`);
+  }
 
   /* Limits: at least the base down payment, at most its instalments, and the
      down payment stops one point before the instalments would be zero. */

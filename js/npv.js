@@ -44,6 +44,27 @@ const NPV = (() => {
      forgetting that. */
   const lastMonth = (plan) => plan.instalments * every();
 
+  /* The term a standard plan is SOLD as, in months, read from its own label.
+
+     THE 4 YEARS PLAN DOES NOT LAST 4 YEARS. Its 15 quarterly instalments end
+     in month 45, which is 3.75 years, and every other plan lands exactly on
+     its name. Anchoring it at 45 meant a customer asking for a plain 4 years
+     (16 quarters, month 48) fell past it and was measured against the 6 years
+     plan instead — a softer yardstick that handed him a far bigger discount
+     for three months more. Ruled 2026-09-11: a plan is anchored at the term
+     it is NAMED for, so 4 years means 4 years.
+
+     Read from the label rather than typed in again, because the label is the
+     name the client sells under and a second copy of it would be one edit away
+     from disagreeing. Never BELOW the real last payment: a plan whose name
+     understated its own length would otherwise be anchored before it ends.
+     A custom plan has no such name and simply anchors at its last payment. */
+  function namedMonths(plan) {
+    const m = /^\s*(\d+(?:\.\d+)?)/.exec(String(plan.label || ''));
+    return m ? Math.round(Number(m[1]) * 12) : 0;
+  }
+  const anchorMonth = (plan) => Math.max(namedMonths(plan), lastMonth(plan));
+
   /** Every payment towards the price, as {month, pct} of the price. */
   function flows(plan) {
     const ms = milestonesFor(plan);
@@ -68,14 +89,17 @@ const NPV = (() => {
   }
 
   /** The standard plans, shortest first — read from CONFIG, never restated. */
-  const ladder = () => CONFIG.plans.slice().sort((a, b) => lastMonth(a) - lastMonth(b));
+  const ladder = () => CONFIG.plans.slice().sort((a, b) => anchorMonth(a) - anchorMonth(b));
 
   /** The shortest standard plan his last payment fits inside. Past the longest
       plan he is measured against the longest, and reads as a premium. */
   function referenceFor(plan) {
+    /* HIS last payment against THEIR advertised term — the two sides of this
+       comparison are deliberately different. He is measured by when his money
+       actually arrives; they are measured by what they are sold as. */
     const m = lastMonth(plan);
     const all = ladder();
-    return all.find((p) => lastMonth(p) >= m) || all[all.length - 1];
+    return all.find((p) => anchorMonth(p) >= m) || all[all.length - 1];
   }
 
   /* Where two neighbouring standard plans end more than a year apart, anything
@@ -85,7 +109,7 @@ const NPV = (() => {
   function gapAround(plan) {
     const m = lastMonth(plan), all = ladder();
     for (let k = 1; k < all.length; k++) {
-      const a = lastMonth(all[k - 1]), b = lastMonth(all[k]);
+      const a = anchorMonth(all[k - 1]), b = anchorMonth(all[k]);
       if (b - a > 12 && m > a && m < b) return { from: all[k - 1], to: all[k] };
     }
     return null;
@@ -171,6 +195,70 @@ const NPV = (() => {
     return hex === CONFIG.npv.passcodeHash;
   }
 
+  /**
+   * The least and the most the customer can actually hand over on contract.
+   *
+   * NOT simply the down-payment limits times the price. Raising the down
+   * payment earns a discount, the discount lowers the price, and the money is
+   * a share OF that lowered price — so the largest cheque the panel can accept
+   * is well under downMax of the sheet price. Quoting the sheet-price figure
+   * would print a range whose top end is refused the moment it is typed.
+   */
+  function downMoneyRange(base, instalments, price, give, contractDate) {
+    const lim = limits(base, instalments);
+    const at = (f) => {
+      const r = evaluate(base, { down: f, instalments }, contractDate);
+      const g = r.verdict === 'earn'
+        ? (give == null ? r.max : Math.min(Math.max(give, 0), r.max))
+        : 0;
+      return f * price * (1 - g);
+    };
+    return { min: at(lim.downMin), max: at(lim.downMax) };
+  }
+
+  /**
+   * The down-payment FRACTION that makes the customer actually pay `money`.
+   *
+   * MONEY IS CIRCULAR HERE, and that is the whole reason this exists. The
+   * schedule is built on the price AFTER the discount, so a down payment held
+   * as a share of the SHEET price comes out smaller than the agent typed —
+   * 500,000 printed as 451,400 on a real offer, reported 2026-09-11. What the
+   * agent means is "the customer hands over this much on contract", so the
+   * fraction has to be the one that still produces that money once the
+   * discount those very terms earn has come off the price:
+   *
+   *     f  =  money / (price × (1 − discount(f)))
+   *
+   * Solved by repeated substitution. The loop gain is f × d(discount)/df,
+   * which is about 0.02 at a small down payment and stays under 0.3 at the
+   * largest this panel allows, so it converges in a few passes; the early
+   * exit ends it long before the cap.
+   *
+   * `give` is how much of the maximum is actually being given — null for all
+   * of it. It belongs here because giving less means a higher price means a
+   * smaller fraction, and the money has to stay put either way.
+   */
+  function downForMoney(base, instalments, price, money, give, contractDate) {
+    if (!(price > 0) || !Number.isFinite(money)) return NaN;
+    let f = money / price;
+    for (let i = 0; i < 40; i++) {
+      const lim = limits(base, instalments);
+      /* Price the CLAMPED guess. An out-of-range fraction produces a nonsense
+         plan whose discount could walk the iteration somewhere it cannot come
+         back from. The UNCLAMPED value is what is returned, so the caller
+         still sees — and refuses — an entry that does not fit. */
+      const probe = Math.min(Math.max(f, lim.downMin), lim.downMax);
+      const r = evaluate(base, { down: probe, instalments }, contractDate);
+      const g = r.verdict === 'earn'
+        ? (give == null ? r.max : Math.min(Math.max(give, 0), r.max))
+        : 0;
+      const next = money / (price * (1 - g));
+      if (Math.abs(next - f) < 1e-12) return next;
+      f = next;
+    }
+    return f;
+  }
+
   /** Can these terms be built on this plan — its down payment or more, its
       instalments or fewer, and something left for the instalments? */
   function fits(base, down, n) {
@@ -196,7 +284,8 @@ const NPV = (() => {
   }
 
   return { evaluate, limits, applyDiscount, checkCode, pv, flows, referenceFor, lastMonth,
-           customPlan, gapAround, fits, planFor, ladder };
+           customPlan, gapAround, fits, planFor, ladder, downForMoney, anchorMonth,
+           downMoneyRange };
 })();
 
 if (typeof module !== 'undefined') module.exports = { NPV };

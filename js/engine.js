@@ -89,7 +89,14 @@ function levelRate(plan) {
 function buildSchedule(unit, plan, contractDate = new Date()) {
   const listPrice = unit.total != null ? unit.total : unit.price;
   const base = unit.price;                     // Final Price — see above
-  const maintenance = round(base * CONFIG.maintenanceRate);
+  /* MAINTENANCE IS NOT REDUCED BY A PAYMENT-TERMS DISCOUNT. Ruled 2026-09-11.
+     It is a charge on the unit, not on the deal, so shortening the plan or
+     paying more up front must not shrink it — only the instalment plan gets
+     the benefit. js/npv.js leaves priceBeforePlanDiscount on the unit for
+     exactly this; without a plan discount it IS `base`, so an ordinary offer
+     is arithmetically untouched. */
+  const maintBase = unit.priceBeforePlanDiscount != null ? unit.priceBeforePlanDiscount : base;
+  const maintenance = round(maintBase * CONFIG.maintenanceRate);
   const at = (month) => addMonths(contractDate, month);
 
   const ms = milestonesFor(plan);
@@ -156,7 +163,18 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
     when: monthLabel(CONFIG.maintenanceDueMonth),
     date: at(CONFIG.maintenanceDueMonth),
     amount: maintenance,
-    pctOfBase: CONFIG.maintenanceRate,
+    /* DERIVED from the money, not restated from the rate. With a payment-terms
+       discount the maintenance is 10% of a bigger number than the plan's base,
+       so it is more than 10% OF WHAT THE CUSTOMER PAYS, and printing a flat
+       10.00% here would leave this column not summing to the total beneath it
+       on the document a customer is asked to agree to.
+
+       With NO plan discount the rate is restated exactly rather than divided
+       out, because maintenance is rounded to whole pounds and the division
+       then returns 0.10000006757…, which is the float noise the "percentage
+       labels carry no float noise" tests exist to keep off the page. */
+    pctOfBase: maintBase === base ? CONFIG.maintenanceRate
+                                  : (base ? maintenance / base : CONFIG.maintenanceRate),
     maintenance: true,
     note: 'Due on delivery',
   });
