@@ -285,7 +285,7 @@ const NPV = (() => {
 
   return { evaluate, limits, applyDiscount, checkCode, pv, flows, referenceFor, lastMonth,
            customPlan, gapAround, fits, planFor, ladder, downForMoney, anchorMonth,
-           downMoneyRange };
+           downMoneyRange, namedMonths };
 })();
 
 if (typeof module !== 'undefined') module.exports = { NPV };

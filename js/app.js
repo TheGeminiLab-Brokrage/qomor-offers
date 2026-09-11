@@ -851,8 +851,23 @@ function renderCustom() {
      which is where anything that has to foot is checked. */
   const pct2 = (x) => pctLabel(Math.round(x * 10000) / 10000);
   const perYear = 12 / CONFIG.instalmentEveryMonths;
-  const yearsOf = (n) => +(n / perYear).toFixed(2);
-  const instOf = (y) => Math.round(y * perYear);
+
+  /* A PLAN'S TERM IS THE ONE IT IS SOLD UNDER, not the one the calendar says.
+     The 4 years plan is 15 quarterly payments, which finishes in month 45 —
+     3.75 years. Every other plan lands exactly on its name, so only this one
+     looked wrong, and showing 3.75 invited an agent to "correct" it to 4.
+     Doing that added a sixteenth quarter, pushed the money three months
+     further out and CUT the discount: typing the plan's own name made the
+     customer worse off. Reported from real use on 2026-09-11.
+
+     So the two directions are tied to the plan list rather than to arithmetic:
+     a year figure matching a plan's NAME means that plan's own instalment
+     count, and a count belonging to a plan is shown by that plan's name. */
+  const namedYears = (p) => NPV.namedMonths(p) / 12;
+  const planNamed = (y) => CONFIG.plans.find((p) => Math.abs(namedYears(p) - y) < 1e-9);
+  const planOfCount = (n) => CONFIG.plans.find((p) => p.instalments === n);
+  const yearsOf = (n) => { const p = planOfCount(n); return p ? namedYears(p) : +(n / perYear).toFixed(2); };
+  const instOf = (y) => { const p = planNamed(y); return p ? p.instalments : Math.round(y * perYear); };
 
   const field = (parent, label, unitText, value, opts) => {
     const wrap = el('label', 'npvfield');
@@ -1002,8 +1017,15 @@ function renderCustom() {
        price in his hand, whatever discount he goes on to earn. */
     const d0 = Number.isFinite(amount) ? amount / price : NaN;
     const typed = parseFloat(inst.input.value);
+    /* "4 years" is genuinely ambiguous: it is both the 4 years plan's 15
+       quarters and a plain 16. So if what is in the box already describes the
+       count in use, the count is left alone, and only a figure that no longer
+       matches re-derives it. Without this, flipping the YEARS / INSTALMENTS
+       switch on a 16-quarter term and clicking away would quietly move it to
+       the 15-quarter plan. */
     const n = !Number.isFinite(typed) ? NaN
-      : (termMode === 'years' ? instOf(typed) : Math.round(typed));
+      : termMode !== 'years' ? Math.round(typed)
+      : (Math.abs(yearsOf(c.instalments) - typed) < 1e-9 ? c.instalments : instOf(typed));
 
     /* Move plans first, when these terms cannot be built on the chosen plan but
        can on another. Too many instalments moves at once: the first digits of a
@@ -1078,9 +1100,15 @@ function renderCustom() {
     const extraDown = c.downMoney - stdDown;
     const shorterBy = +(yearsOf(base.instalments) - yearsOf(c.instalments)).toFixed(2);
     const nowQ = levelRate(cp), wasQ = levelRate(base);
-    const pair = (now, was) => t('npv.ratePair', {
-      now: pct2(now), was: pct2(was), delta: pct2(now - was),
-    });
+    /* Which way it moved, said in words. Raising the down payment SHRINKS
+       each instalment, so this line is negative at least as often as it is
+       positive, and "-0.89% more" is not a sentence. */
+    const pair = (now, was) => {
+      const d = now - was;
+      const key = Math.abs(d) < 5e-5 ? 'npv.ratePairSame'
+        : d > 0 ? 'npv.ratePair' : 'npv.ratePairLess';
+      return t(key, { now: pct2(now), was: pct2(was), delta: pct2(Math.abs(d)) });
+    };
     changes.hidden = false;
     changes.innerHTML = '';
     changes.appendChild(el('b', null, t('npv.changes')));
@@ -1094,7 +1122,7 @@ function renderCustom() {
       ? t('npv.moreMoney', { amount: fmt(extraDown), currency: cur })
       : t('npv.sameAsStd'));
     chg(t('npv.chgTerm'), shorterBy > 0
-      ? t('npv.shorterBy', { y: shorterBy })
+      ? t(shorterBy === 1 ? 'npv.shorterBy1' : 'npv.shorterBy', { y: shorterBy })
       : t('npv.sameAsStd'));
     /* What the company collects, per instalment and per year. Both, because
        the client's own plan tables are quoted per quarter and the schedule
